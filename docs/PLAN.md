@@ -13,6 +13,14 @@ Research: `docs/research/01-laravel-lifecycle.md`, `02-existing-tools.md`, `03-f
   - Views: composing/creating events.
   - Eloquent: a lazy-loading violation callback that chains to any existing app handler.
   - Livewire: `Livewire::listen` hooks.
+- **Verified corrections (`docs/research/04-verified.md`, checked against Laravel 12.70.2, Livewire 4.4.8, Filament 5.11) override anything above that conflicts:**
+  - Backtrace limit must be 40-50, not 15: the app frame sits at index 13-15 for plain queries and about 20 for lazy-loaded relations. Cost is about 2 µs per query.
+  - Per-middleware timing: only `$app->extend($middlewareClass, fn ($inst) => new TimedMiddleware($inst))` works. A custom `Pipeline` binding cannot work. `terminate()` still runs.
+  - Failed queries: `DB::listen` never sees them. Use `Connection::beforeExecuting`, attached per connection via `ConnectionEstablished`.
+  - Lazy loading: needs `Model::preventLazyLoading(true)`. The violation callback is one shared static slot, so read and chain any existing callback by reflection and rethrow the default exception ourselves. `handleLazyLoadingViolationUsing` does not chain. Auto-eager-load produces no violations.
+  - Livewire: `componentHook()` calls made after boot are silently ignored, so register hooks early. The `call` event has 7 arguments. `profile` only fires when `app.debug` is true. Filament's serving event is `Filament\Events\ServingFilament`.
+  - Views: the Blade engine is `ExtendedCompilerEngine`, so view timing must decorate it, not replace it.
+  - Unverified still: Octane `Kernel::terminate`, PHP 8.2/8.3, Livewire 3, Filament 4.
 - **Gaps we fill ourselves** (the framework has no events for them):
   - failed queries;
   - per-middleware timing, by wrapping the middleware pipeline;
