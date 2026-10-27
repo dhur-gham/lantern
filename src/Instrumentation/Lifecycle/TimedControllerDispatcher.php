@@ -9,6 +9,7 @@ use Illuminate\Routing\Contracts\ControllerDispatcher;
 use Illuminate\Routing\Route;
 use Lantern\Trace\Recorder;
 use Lantern\Trace\SpanType;
+use ReflectionClass;
 use ReflectionMethod;
 
 final class TimedControllerDispatcher implements ControllerDispatcher
@@ -24,10 +25,12 @@ final class TimedControllerDispatcher implements ControllerDispatcher
             return $this->inner->dispatch($route, $controller, $method);
         }
 
-        $span = $recorder->start(SpanType::Controller, get_class($controller).'@'.$method);
+        $component = $controller instanceof \Livewire\Component;
+        $span = $recorder->start(SpanType::Controller, get_class($controller).($component ? '' : '@'.$method));
 
         try {
-            $reflection = new ReflectionMethod($controller, $method);
+            // Full-page component: point at the page class, not the trait that implements the entry method.
+            $reflection = $component ? new ReflectionClass($controller) : new ReflectionMethod($controller, $method);
             $file = $reflection->getFileName();
             if ($file !== false) {
                 $span->callSite = ['file' => $file, 'line' => (int) $reflection->getStartLine(), 'function' => $method];

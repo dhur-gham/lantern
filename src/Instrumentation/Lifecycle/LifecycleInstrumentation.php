@@ -182,9 +182,13 @@ final class LifecycleInstrumentation
             return;
         }
 
+        if (class_exists(\Lantern\Instrumentation\Filament\FilamentInstrumentation::class)) {
+            \Lantern\Instrumentation\Filament\FilamentInstrumentation::annotateTrace($this->app, $trace);
+        }
+
         try {
             $issues = array_map(fn (\Lantern\Detection\Issue $i) => $i->toArray(), $this->app->make(\Lantern\Detection\Analyzer::class)->analyze($trace));
-            $trace->meta['issues'] = $issues;
+            $trace->meta['issues'] = $this->withFilamentMeta($trace, $issues);
             $trace->meta['issue_count'] = count($issues);
         } catch (Throwable) {
             // analysis must never break the request
@@ -195,6 +199,33 @@ final class LifecycleInstrumentation
         if (config('lantern.debug_write_last_trace')) {
             $this->writeLastTrace($trace);
         }
+    }
+
+    /**
+     * @param list<array<string, mixed>> $issues
+     * @return list<array<string, mixed>>
+     */
+    private function withFilamentMeta(\Lantern\Trace\Trace $trace, array $issues): array
+    {
+        $spans = $trace->spans();
+        $summary = [];
+        foreach ($issues as &$issue) {
+            foreach ((array) ($issue['span_ids'] ?? []) as $id) {
+                $info = isset($spans[$id]) ? ($spans[$id]->meta['filament'] ?? null) : null;
+                if ($info !== null) {
+                    $issue['meta']['filament'] = $info;
+                    $summary[json_encode($info)] = $info;
+                    break;
+                }
+            }
+        }
+        unset($issue);
+
+        if ($summary !== []) {
+            $trace->meta['filament'] = array_values($summary);
+        }
+
+        return $issues;
     }
 
     private function writeLastTrace(\Lantern\Trace\Trace $trace): void

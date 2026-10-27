@@ -11,6 +11,7 @@ use Lantern\Instrumentation\Eloquent\LazyLoadInstrumentation;
 use Lantern\Instrumentation\Lifecycle\LifecycleInstrumentation;
 use Lantern\Instrumentation\Lifecycle\MemorySink;
 use Lantern\Instrumentation\Lifecycle\TraceSink;
+use Lantern\Instrumentation\Livewire\LivewireInstrumentation;
 use Lantern\Instrumentation\Middleware\MiddlewareInstrumentation;
 use Lantern\Instrumentation\Query\QueryInstrumentation;
 use Lantern\Query\CallSiteResolver;
@@ -46,6 +47,14 @@ class LanternServiceProvider extends ServiceProvider
             $queries = new QueryInstrumentation($this->app);
             $this->app->instance(QueryInstrumentation::class, $queries);
             $queries->register();
+        }
+
+        if (class_exists(\Livewire\Livewire::class) && class_exists(LivewireInstrumentation::class)) {
+            LivewireInstrumentation::register($this->app);
+        }
+
+        if (class_exists(\Lantern\Instrumentation\Filament\FilamentInstrumentation::class)) {
+            \Lantern\Instrumentation\Filament\FilamentInstrumentation::register($this->app);
         }
 
         if (class_exists(LazyLoadInstrumentation::class)) {

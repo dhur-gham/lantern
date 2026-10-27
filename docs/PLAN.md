@@ -77,7 +77,7 @@ Each phase has one goal and a verification gate. Agents in a phase never share a
 - **Verified:** every demo README bug is flagged on a 5k-post / 50k-comment copy, and `/api/posts/fixed` and `/blog-fixed` give zero issues (demo-app `LanternDetectionTest`).
 - **Gate:** every ground-truth bug in the demo README is detected, and the `fixed` twins produce zero issues (no false positives).
 
-### Phase 5: Livewire and Filament attribution
+### Phase 5: Livewire and Filament attribution [x] DONE
 - **Goal:** `/livewire-{hash}/update` requests and Filament pages are traced by component and method.
 - **Work:** Livewire hook adapter that supports v3 and v4, plus Filament-aware labelling.
 - **Gate:** the Filament PostResource N+1 is attributed to the right resource and column.
