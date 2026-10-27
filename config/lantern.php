@@ -19,7 +19,13 @@ return [
         'memory_delta_mb' => 8,
     ],
 
-    // Request paths that are never traced (fnmatch patterns).
+    // Number of finished traces kept by the in-memory sink.
+    'memory_sink_limit' => (int) env('LANTERN_MEMORY_SINK_LIMIT', 20),
+
+    // Write each finished trace to storage_path('lantern/last-trace.json') for CLI inspection.
+    'debug_write_last_trace' => env('LANTERN_DEBUG_WRITE_LAST_TRACE', false),
+
+    // Request paths that are never traced (Str::is patterns). Livewire update requests are traced.
     'ignore_paths' => [
         'lantern*',
         'up',

@@ -5,6 +5,12 @@ namespace Lantern;
 use Illuminate\Support\ServiceProvider;
 use Lantern\Console\InstallCommand;
 use Lantern\Console\StatusCommand;
+use Lantern\Console\TraceDumpCommand;
+use Lantern\Instrumentation\Lifecycle\LifecycleInstrumentation;
+use Lantern\Instrumentation\Lifecycle\MemorySink;
+use Lantern\Instrumentation\Lifecycle\TraceSink;
+use Lantern\Instrumentation\Middleware\MiddlewareInstrumentation;
+use Lantern\Trace\Recorder;
 
 class LanternServiceProvider extends ServiceProvider
 {
@@ -13,6 +19,22 @@ class LanternServiceProvider extends ServiceProvider
     public function register(): void
     {
         $this->mergeConfigFrom(__DIR__.'/../config/lantern.php', 'lantern');
+
+        if (! $this->tracingEnabled()) {
+            return;
+        }
+
+        $this->app->scoped(Recorder::class);
+        $this->app->singleton(TraceSink::class, fn ($app) => new MemorySink((int) $app['config']->get('lantern.memory_sink_limit', 20)));
+
+        // Lifecycle first: it begins the trace as early as a provider can.
+        $lifecycle = new LifecycleInstrumentation($this->app);
+        $this->app->instance(LifecycleInstrumentation::class, $lifecycle);
+        $lifecycle->register();
+
+        if (class_exists(MiddlewareInstrumentation::class)) {
+            MiddlewareInstrumentation::register($this->app);
+        }
     }
 
     public function boot(): void
@@ -26,7 +48,12 @@ class LanternServiceProvider extends ServiceProvider
                 __DIR__.'/../database/migrations' => database_path('migrations'),
             ], 'lantern-migrations');
 
-            $this->commands([InstallCommand::class, StatusCommand::class]);
+            $this->commands([InstallCommand::class, StatusCommand::class, TraceDumpCommand::class]);
         }
+    }
+
+    private function tracingEnabled(): bool
+    {
+        return (bool) $this->app['config']->get('lantern.enabled') && ! $this->app['config']->get('lantern.kill_switch');
     }
 }
