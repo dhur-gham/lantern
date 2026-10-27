@@ -14,10 +14,33 @@ return [
     'sampling_rate' => (float) env('LANTERN_SAMPLING_RATE', 1.0),
 
     'thresholds' => [
-        'n_plus_one_min_repeats' => 5,
-        'slow_query_ms' => 100,
-        'memory_delta_mb' => 8,
+        'n_plus_one_min_repeats' => (int) env('LANTERN_N_PLUS_ONE_MIN_REPEATS', 5),
+        'duplicate_min_repeats' => (int) env('LANTERN_DUPLICATE_MIN_REPEATS', 2),
+        'slow_query_ms' => (int) env('LANTERN_SLOW_QUERY_MS', 100),
+        'memory_delta_mb' => (float) env('LANTERN_MEMORY_DELTA_MB', 32),
+        // Queries slower than this are candidates for EXPLAIN (when 'explain' is on).
+        'explain_min_ms' => (float) env('LANTERN_EXPLAIN_MIN_MS', 2),
+        'max_issues_per_trace' => 50,
     ],
+
+    // Framework plumbing that N+1, duplicate, slow-query and missing-index detection skips. A query is skipped when
+    // its primary table (after FROM / INTO / UPDATE) is listed, or its SQL matches a pattern (a plain substring, or a
+    // regex when it starts with '/').
+    'ignore_tables' => ['sessions', 'cache', 'cache_locks', 'jobs', 'job_batches', 'failed_jobs', 'migrations', 'password_reset_tokens'],
+    'ignore_sql_patterns' => [],
+
+    // Detector classes run against each finished trace; missing classes are skipped.
+    'detectors' => [
+        \Lantern\Detection\Detectors\NPlusOneDetector::class,
+        \Lantern\Detection\Detectors\DuplicateQueryDetector::class,
+        \Lantern\Detection\Detectors\SlowQueryDetector::class,
+        \Lantern\Detection\Detectors\MemoryHogDetector::class,
+        \Lantern\Detection\Detectors\MissingIndexDetector::class,
+        \Lantern\Detection\Detectors\LazyLoadDetector::class,
+    ],
+
+    // Run EXPLAIN on slow queries to detect missing indexes.
+    'explain' => env('LANTERN_EXPLAIN', false),
 
     // Record bound values on query spans. null = on in dev mode, off otherwise.
     // Named bindings called password/token/secret are always redacted.

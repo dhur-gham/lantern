@@ -29,6 +29,23 @@ final class TraceFormatter
             self::node($data['root'], 0, $lines);
         }
 
+        $issues = $data['meta']['issues'] ?? [];
+        if (is_array($issues) && $issues !== []) {
+            $lines[] = '';
+            $lines[] = 'Issues ('.count($issues).')';
+            foreach ($issues as $issue) {
+                $line = sprintf('- [%s] %s: %s  x%d  %.2f ms', $issue['severity'] ?? '?', $issue['type'] ?? '?', $issue['title'] ?? '?', (int) ($issue['count'] ?? 0), (float) ($issue['total_ms'] ?? 0));
+                $site = $issue['call_site'] ?? null;
+                if (is_array($site) && isset($site['file'])) {
+                    $line .= '  @ '.self::shorten((string) $site['file']).':'.($site['line'] ?? '?');
+                }
+                $lines[] = $line;
+                if (! empty($issue['suggestion'])) {
+                    $lines[] = '    fix: '.$issue['suggestion'];
+                }
+            }
+        }
+
         return implode("\n", $lines);
     }
 

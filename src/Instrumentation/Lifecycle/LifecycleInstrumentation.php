@@ -182,6 +182,14 @@ final class LifecycleInstrumentation
             return;
         }
 
+        try {
+            $issues = array_map(fn (\Lantern\Detection\Issue $i) => $i->toArray(), $this->app->make(\Lantern\Detection\Analyzer::class)->analyze($trace));
+            $trace->meta['issues'] = $issues;
+            $trace->meta['issue_count'] = count($issues);
+        } catch (Throwable) {
+            // analysis must never break the request
+        }
+
         $this->app->make(TraceSink::class)->push($trace);
 
         if (config('lantern.debug_write_last_trace')) {

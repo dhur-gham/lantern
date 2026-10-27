@@ -4,8 +4,10 @@ namespace Lantern;
 
 use Illuminate\Support\ServiceProvider;
 use Lantern\Console\InstallCommand;
+use Lantern\Detection\Analyzer;
 use Lantern\Console\StatusCommand;
 use Lantern\Console\TraceDumpCommand;
+use Lantern\Instrumentation\Eloquent\LazyLoadInstrumentation;
 use Lantern\Instrumentation\Lifecycle\LifecycleInstrumentation;
 use Lantern\Instrumentation\Lifecycle\MemorySink;
 use Lantern\Instrumentation\Lifecycle\TraceSink;
@@ -29,6 +31,8 @@ class LanternServiceProvider extends ServiceProvider
         $this->app->scoped(Recorder::class);
         $this->app->singleton(TraceSink::class, fn ($app) => new MemorySink((int) $app['config']->get('lantern.memory_sink_limit', 20)));
 
+        $this->app->singleton(Analyzer::class, fn ($app) => new Analyzer((array) $app['config']->get('lantern', [])));
+
         // Lifecycle first: it begins the trace as early as a provider can.
         $lifecycle = new LifecycleInstrumentation($this->app);
         $this->app->instance(LifecycleInstrumentation::class, $lifecycle);
@@ -42,6 +46,10 @@ class LanternServiceProvider extends ServiceProvider
             $queries = new QueryInstrumentation($this->app);
             $this->app->instance(QueryInstrumentation::class, $queries);
             $queries->register();
+        }
+
+        if (class_exists(LazyLoadInstrumentation::class)) {
+            $this->app->booted(fn ($app) => LazyLoadInstrumentation::register($app));
         }
     }
 

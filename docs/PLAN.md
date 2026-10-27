@@ -69,9 +69,12 @@ Each phase has one goal and a verification gate. Agents in a phase never share a
 - **Work:** `DB::listen`, backtrace filter, Blade-to-view mapping, fingerprinting, failed-query capture.
 - **Gate:** the n-plus-one endpoint's queries point at the real lines in the demo app, including the accessor and API Resource cases.
 
-### Phase 4: Detectors
+### Phase 4: Detectors [x] DONE
 - **Goal:** the issue engine.
 - **Work:** N+1 (both layers), duplicates, slow queries, unindexed-query suspects, memory-hog detector.
+- **Done:** N+1 (fingerprint + call site, merged with the Eloquent lazy-load event into one issue), duplicate, slow query, missing index (opt-in EXPLAIN) and memory hog (net and peak growth per span); framework tables (`ignore_tables`, `ignore_sql_patterns`) are skipped.
+- **Thresholds**, all under `config('lantern.thresholds')`: `n_plus_one_min_repeats` 5 (critical at 4x), `duplicate_min_repeats` 2, `slow_query_ms` 100, `memory_delta_mb` 32, `explain_min_ms` 2, `max_issues_per_trace` 50 (env `LANTERN_*` overrides).
+- **Verified:** every demo README bug is flagged on a 5k-post / 50k-comment copy, and `/api/posts/fixed` and `/blog-fixed` give zero issues (demo-app `LanternDetectionTest`).
 - **Gate:** every ground-truth bug in the demo README is detected, and the `fixed` twins produce zero issues (no false positives).
 
 ### Phase 5: Livewire and Filament attribution

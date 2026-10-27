@@ -82,7 +82,7 @@ final class Trace
     {
         $peak = 0;
         foreach ($this->spans as $span) {
-            $peak = max($peak, $span->memoryStart, $span->memoryEnd ?? 0);
+            $peak = max($peak, $span->memoryStart, $span->memoryEnd ?? 0, $span->peakEnd ?? 0);
         }
 
         return $peak;

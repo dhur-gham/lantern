@@ -14,6 +14,10 @@ final class Span
 
     public ?int $memoryEnd = null;
 
+    public readonly int $peakStart;
+
+    public ?int $peakEnd = null;
+
     /** @var array<string, mixed> */
     public array $meta = [];
 
@@ -29,6 +33,7 @@ final class Span
     ) {
         $this->startNs = $startNs ?? hrtime(true);
         $this->memoryStart = memory_get_usage();
+        $this->peakStart = memory_get_peak_usage();
     }
 
     public function stop(?int $endNs = null): void
@@ -39,6 +44,7 @@ final class Span
 
         $this->endNs = $endNs ?? hrtime(true);
         $this->memoryEnd = memory_get_usage();
+        $this->peakEnd = memory_get_peak_usage();
     }
 
     public function isStopped(): bool
@@ -56,6 +62,17 @@ final class Span
     public function memoryDelta(): int
     {
         return ($this->memoryEnd ?? memory_get_usage()) - $this->memoryStart;
+    }
+
+    /**
+     * Bytes the process high-water mark rose above this span's starting usage while it ran. Catches transient growth
+     * (rows hydrated and freed inside the span) that memoryDelta() misses. 0 when the peak did not move.
+     */
+    public function memoryPeakGrowth(): int
+    {
+        $end = $this->peakEnd ?? memory_get_peak_usage();
+
+        return $end > $this->peakStart ? max(0, $end - $this->memoryStart) : 0;
     }
 
     /** @return array<string, mixed> */

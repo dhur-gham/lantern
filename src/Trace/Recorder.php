@@ -22,6 +22,10 @@ final class Recorder
     {
         $this->reset();
 
+        if (function_exists('memory_reset_peak_usage')) {
+            memory_reset_peak_usage();
+        }
+
         $this->trace = new Trace($startNs);
         $this->trace->meta = $meta;
         $this->active = true;
