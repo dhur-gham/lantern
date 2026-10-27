@@ -13,7 +13,27 @@ namespace Lantern\Query;
  */
 final class Fingerprinter
 {
+    private const CACHE_LIMIT = 512;
+
+    /** @var array<string, string> normalized SQL by raw SQL; the char loop is the hot spot, and apps repeat the same statements. */
+    private array $normalized = [];
+
     public function normalize(string $sql): string
+    {
+        if (isset($this->normalized[$sql])) {
+            return $this->normalized[$sql];
+        }
+
+        $result = $this->compute($sql);
+
+        if (count($this->normalized) >= self::CACHE_LIMIT) {
+            $this->normalized = [];
+        }
+
+        return $this->normalized[$sql] = $result;
+    }
+
+    private function compute(string $sql): string
     {
         $len = strlen($sql);
         $out = '';

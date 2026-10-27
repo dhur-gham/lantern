@@ -74,8 +74,17 @@ return [
         'horizon*',
     ],
 
+    // Tail sampling (applied when a trace finishes): slow, 5xx and issue-bearing traces are always kept.
+    'keep_slow_ms' => (int) env('LANTERN_KEEP_SLOW_MS', 1000),
+    'keep_rate' => (float) env('LANTERN_KEEP_RATE', 0.1),
+
     'storage' => [
+        // memory | database
+        'driver' => env('LANTERN_STORAGE_DRIVER', 'memory'),
         'connection' => env('LANTERN_DB_CONNECTION'),
+        'compress' => env('LANTERN_STORAGE_COMPRESS', true),
+        // Traces buffered before a write (flushed at the end of the request regardless).
+        'batch_size' => (int) env('LANTERN_STORAGE_BATCH_SIZE', 1),
     ],
 
     'retention' => [

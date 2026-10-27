@@ -352,6 +352,10 @@ final class QueryInstrumentation
 
     private function ignoredConnection(Connection $connection): bool
     {
+        if (QuerySuspend::active()) {
+            return true;
+        }
+
         $storage = $this->config('storage.connection', null);
 
         return is_string($storage) && $storage !== '' && $connection->getName() === $storage;

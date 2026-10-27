@@ -66,10 +66,17 @@ final class MiddlewareInstrumentation
         }
         self::$hooked[$app] = true;
 
-        $app['events']->listen(RouteMatched::class, static function (RouteMatched $event) use ($app): void {
+        $seen = [];
+        $app['events']->listen(RouteMatched::class, static function (RouteMatched $event) use ($app, &$seen): void {
             try {
                 $router = $app->make('router');
                 $names = $router->gatherRouteMiddleware($event->route);
+                // Resolving names to classes uses reflection; a route's middleware list rarely changes, so do it once per list.
+                $key = md5(serialize(array_map(static fn ($n) => is_string($n) ? $n : spl_object_id($n), $names)));
+                if (isset($seen[$key])) {
+                    return;
+                }
+                $seen[$key] = true;
                 $aliases = self::aliases($app);
                 $groups = self::groups($app);
                 self::wrap($app, self::resolveAll($names, $aliases, $groups));

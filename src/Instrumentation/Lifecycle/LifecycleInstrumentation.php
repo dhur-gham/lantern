@@ -40,6 +40,8 @@ final class LifecycleInstrumentation
 
     private bool $firstBegin = true;
 
+    private bool $terminatingHooked = false;
+
     private ?Span $routeSpan = null;
 
     /** @var WeakMap<object, Span> */
@@ -64,7 +66,14 @@ final class LifecycleInstrumentation
         $events = $app['events'];
         $events->listen(RouteMatched::class, fn (RouteMatched $e) => $this->guard(fn () => $this->routeMatched($e)));
         $events->listen(RequestHandled::class, fn (RequestHandled $e) => $this->guard(fn () => $this->requestHandled($e)));
-        $events->listen(Terminating::class, fn () => $this->guard(fn () => $this->app->terminating(fn () => $this->guard($this->finish(...)))));
+        // Registered once: terminating callbacks are never cleared, so adding one per request grows without bound in long-lived processes.
+        $events->listen(Terminating::class, fn () => $this->guard(function (): void {
+            if ($this->terminatingHooked) {
+                return;
+            }
+            $this->terminatingHooked = true;
+            $this->app->terminating(fn () => $this->guard($this->finish(...)));
+        }));
 
         // Controller + closure timing: decorate the dispatcher contracts.
         $app->extend(ControllerDispatcher::class, fn ($inner) => new TimedControllerDispatcher($inner, $recorder));

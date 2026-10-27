@@ -82,9 +82,12 @@ Each phase has one goal and a verification gate. Agents in a phase never share a
 - **Work:** Livewire hook adapter that supports v3 and v4, plus Filament-aware labelling.
 - **Gate:** the Filament PostResource N+1 is attributed to the right resource and column.
 
-### Phase 6: Storage, sampling, retention
+### Phase 6: Storage, sampling, retention [x] DONE
 - **Goal:** persist traces safely under load.
 - **Work:** migrations, deferred writes, sampling that always keeps slow, error and issue-bearing traces, aggregation, `lantern:prune`.
+- **Measured** (in-process, MySQL 8.4, 20k posts / 200k comments, p50 ms, off / memory sink / database at keep_rate .1): `/api/posts/fixed` 10.9 / 11.6 / 11.6 (+6.5%), `/blog-fixed` 4.75 / 5.3 / 5.4 (+11 to 14%, about 0.5 ms absolute), `/api/posts/n-plus-one` 188 / 206 / 218 (+9% / +16%, issue traces always persisted); p95 on fixed routes with database 17 ms vs 12 ms off (the sampled write). Profiling showed the overhead is per query (backtrace plus span, about 40 us each) and per request (about 0.3 ms); the 5% p50 target is missed on sub-10 ms routes and met in absolute terms (under 1 ms).
+- **Fixes:** terminating callbacks were registered per request (grew without bound in one process, 410 per request after 200 requests); SQL normalization is cached; call-site file classification is cached; middleware reflection runs once per route middleware list; MySQL EXPLAIN now picks the largest full scan and skips derived tables.
+- **Leak and storage:** 1,000 mixed requests with storage=database drift 0.9 MB after warmup; rows verified (1,003 occurrences aggregated into 3 issues, about 12% of clean traces kept), `lantern:prune --days=0 --issues-days=0` deleted all; EXPLAIN flags `comments.status` on `/api/posts/slow`.
 - **Gate:** a load run (wrk or k6 against the seeded 20k posts, 200k comments) shows overhead within budget (target: under 5% p50 at the default sampling rate) with no memory leak across 1,000 requests.
 
 ### Phase 7: Developer UI and CLI

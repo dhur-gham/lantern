@@ -15,6 +15,9 @@ final class CallSiteResolver
 
     private string $own;
 
+    /** @var array<string, array{0: string, 1: bool, 2: bool, 3: bool}> path, is own code, is app code, is under vendor/, by raw file name */
+    private array $files = [];
+
     /** @param list<string> $appPaths */
     public function __construct(array $appPaths, string $basePath, private int $limit = 50)
     {
@@ -56,8 +59,15 @@ final class CallSiteResolver
                 continue;
             }
 
-            $path = self::normalize($file);
-            if ($this->isOwn($path)) {
+            if (! isset($this->files[$file])) {
+                if (count($this->files) > 2000) {
+                    $this->files = [];
+                }
+                $p = self::normalize($file);
+                $this->files[$file] = [$p, $this->isOwn($p), $this->isApp($p), self::inVendor($p)];
+            }
+            [$path, $own, $appFile, $vendorFile] = $this->files[$file];
+            if ($own) {
                 continue;
             }
 
@@ -77,8 +87,11 @@ final class CallSiteResolver
                 $isApp = $this->isApp($sourcePath);
                 $isVendor = ! $isApp && self::inVendor($sourcePath);
             } else {
-                $isApp = $this->isApp($path);
-                $isVendor = ! $isApp && self::inVendor($path) && ! self::isFrameworkInternal($path, $frame);
+                $isApp = $appFile;
+                if (! $isApp && ($fallback !== null || ! $vendorFile)) {
+                    continue; // a vendor fallback is already held, or this is neither app nor vendor code
+                }
+                $isVendor = ! $isApp && ! self::isFrameworkInternal($path, $frame);
             }
 
             if (! $isApp && ! ($isVendor && $fallback === null)) {

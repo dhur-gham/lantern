@@ -4,12 +4,17 @@ namespace Lantern;
 
 use Illuminate\Support\ServiceProvider;
 use Lantern\Console\InstallCommand;
+use Lantern\Console\PruneCommand;
 use Lantern\Detection\Analyzer;
 use Lantern\Console\StatusCommand;
 use Lantern\Console\TraceDumpCommand;
 use Lantern\Instrumentation\Eloquent\LazyLoadInstrumentation;
 use Lantern\Instrumentation\Lifecycle\LifecycleInstrumentation;
 use Lantern\Instrumentation\Lifecycle\MemorySink;
+use Lantern\Instrumentation\Lifecycle\PersistSink;
+use Lantern\Sampling\Sampler;
+use Lantern\Storage\DatabaseTraceStore;
+use Lantern\Storage\TraceStore;
 use Lantern\Instrumentation\Lifecycle\TraceSink;
 use Lantern\Instrumentation\Livewire\LivewireInstrumentation;
 use Lantern\Instrumentation\Middleware\MiddlewareInstrumentation;
@@ -30,7 +35,34 @@ class LanternServiceProvider extends ServiceProvider
         }
 
         $this->app->scoped(Recorder::class);
-        $this->app->singleton(TraceSink::class, fn ($app) => new MemorySink((int) $app['config']->get('lantern.memory_sink_limit', 20)));
+        // Head sampling: an unsampled execution records nothing. Skipped on long-lived workers, where one
+        // provider boot spans many requests and the decision would stick.
+        if (! isset($_SERVER['LARAVEL_OCTANE']) && ! $this->app->runningInConsole()
+            && ! (new Sampler((array) $this->app['config']->get('lantern', [])))->headDecision()) {
+            return;
+        }
+
+        $this->app->singleton(MemorySink::class, fn ($app) => new MemorySink((int) $app['config']->get('lantern.memory_sink_limit', 20)));
+        $this->app->singleton(Sampler::class, fn ($app) => new Sampler((array) $app['config']->get('lantern', [])));
+        $this->app->singleton(TraceStore::class, fn ($app) => new DatabaseTraceStore(
+            $app['db'],
+            $app['config']->get('lantern.storage.connection'),
+            (bool) $app['config']->get('lantern.storage.compress', false),
+        ));
+        $this->app->singleton(TraceSink::class, function ($app) {
+            $config = $app['config'];
+            if ($config->get('lantern.storage.driver', 'memory') === 'database' && interface_exists(TraceStore::class) && $app->bound(TraceStore::class)) {
+                return new PersistSink(
+                    $app->make(TraceStore::class),
+                    $app->make(Sampler::class),
+                    $app->make(MemorySink::class),
+                    $app,
+                    (int) $config->get('lantern.storage.batch_size', 1),
+                );
+            }
+
+            return $app->make(MemorySink::class);
+        });
 
         $this->app->singleton(Analyzer::class, fn ($app) => new Analyzer((array) $app['config']->get('lantern', [])));
 
@@ -64,6 +96,8 @@ class LanternServiceProvider extends ServiceProvider
 
     public function boot(): void
     {
+        $this->loadMigrationsFrom(__DIR__.'/../database/migrations');
+
         if ($this->app->runningInConsole()) {
             $this->publishes([
                 __DIR__.'/../config/lantern.php' => config_path('lantern.php'),
@@ -73,7 +107,7 @@ class LanternServiceProvider extends ServiceProvider
                 __DIR__.'/../database/migrations' => database_path('migrations'),
             ], 'lantern-migrations');
 
-            $this->commands([InstallCommand::class, StatusCommand::class, TraceDumpCommand::class]);
+            $this->commands([InstallCommand::class, StatusCommand::class, TraceDumpCommand::class, PruneCommand::class]);
         }
     }
 

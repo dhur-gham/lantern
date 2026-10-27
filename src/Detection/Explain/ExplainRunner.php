@@ -101,9 +101,16 @@ final class ExplainRunner
     private function mysql(array $rows): array
     {
         $rows = array_map(fn ($r) => array_change_key_case($r), $rows);
+        // Prefer the biggest full scan (a join or materialized subquery can list several tables); derived tables like
+        // <subquery2> are not real tables. Otherwise fall back to the first row.
         $pick = null;
         foreach ($rows as $row) {
-            if ($pick === null || (strtoupper((string) ($row['type'] ?? '')) === 'ALL' && strtoupper((string) ($pick['type'] ?? '')) !== 'ALL')) {
+            if (str_starts_with((string) ($row['table'] ?? ''), '<')) {
+                continue;
+            }
+            $scan = strtoupper((string) ($row['type'] ?? '')) === 'ALL';
+            $pickScan = $pick !== null && strtoupper((string) ($pick['type'] ?? '')) === 'ALL';
+            if ($pick === null || ($scan && ! $pickScan) || ($scan && $pickScan && (int) ($row['rows'] ?? 0) > (int) ($pick['rows'] ?? 0))) {
                 $pick = $row;
             }
         }
