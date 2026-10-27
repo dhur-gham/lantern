@@ -10,6 +10,9 @@ return [
     // dev: capture call sites for every query. profile: only slow/repeated ones.
     'mode' => env('LANTERN_MODE', 'dev'),
 
+    // all: resolve every query's call site. lazy: only repeated or slow queries (backfilled on repeat).
+    'call_site_mode' => env('LANTERN_CALL_SITE_MODE', env('LANTERN_MODE', 'dev') === 'dev' ? 'all' : 'lazy'),
+
     // Fraction of executions to trace (0.0 - 1.0). Slow/error/issue traces are always kept.
     'sampling_rate' => (float) env('LANTERN_SAMPLING_RATE', 1.0),
 
