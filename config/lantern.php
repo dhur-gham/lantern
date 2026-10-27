@@ -19,6 +19,23 @@ return [
         'memory_delta_mb' => 8,
     ],
 
+    // Record bound values on query spans. null = on in dev mode, off otherwise.
+    // Named bindings called password/token/secret are always redacted.
+    'capture_bindings' => env('LANTERN_CAPTURE_BINDINGS'),
+
+    // Longer string bindings are truncated to this many characters.
+    'binding_max_length' => 200,
+
+    // Also store the normalized SQL on each query span.
+    'capture_normalized_sql' => true,
+
+    // Frames inspected when resolving a query's call site (verified: 40-50 needed under lazy loading/Livewire).
+    'backtrace_limit' => 50,
+
+    // Directories whose files count as application code for call sites. Views and routes are included so
+    // queries made while rendering Blade or inside route closures point at the template/route line.
+    'app_paths' => [app_path(), resource_path('views'), base_path('routes')],
+
     // Number of finished traces kept by the in-memory sink.
     'memory_sink_limit' => (int) env('LANTERN_MEMORY_SINK_LIMIT', 20),
 

@@ -10,6 +10,8 @@ use Lantern\Instrumentation\Lifecycle\LifecycleInstrumentation;
 use Lantern\Instrumentation\Lifecycle\MemorySink;
 use Lantern\Instrumentation\Lifecycle\TraceSink;
 use Lantern\Instrumentation\Middleware\MiddlewareInstrumentation;
+use Lantern\Instrumentation\Query\QueryInstrumentation;
+use Lantern\Query\CallSiteResolver;
 use Lantern\Trace\Recorder;
 
 class LanternServiceProvider extends ServiceProvider
@@ -34,6 +36,12 @@ class LanternServiceProvider extends ServiceProvider
 
         if (class_exists(MiddlewareInstrumentation::class)) {
             MiddlewareInstrumentation::register($this->app);
+        }
+
+        if (class_exists(QueryInstrumentation::class) && class_exists(CallSiteResolver::class)) {
+            $queries = new QueryInstrumentation($this->app);
+            $this->app->instance(QueryInstrumentation::class, $queries);
+            $queries->register();
         }
     }
 
