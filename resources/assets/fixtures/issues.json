@@ -1,0 +1,58 @@
+{
+ "data": [
+  {
+   "key": "n1-a91f03c2",
+   "type": "n_plus_one",
+   "title": "N+1: comments loaded one post at a time",
+   "severity": "high",
+   "occurrences": 143,
+   "count_total": 1144,
+   "total_ms": 4120.5,
+   "max_ms": 61.2,
+   "call_site": {
+    "file": "app/Http/Controllers/PostController.php",
+    "line": 42
+   },
+   "suggestion": "Eager load the relation: Post::with('comments').",
+   "first_seen": "2026-10-26T20:33:59.346Z",
+   "last_seen": "2026-10-27T20:33:51.346Z",
+   "last_trace_id": "t1"
+  },
+  {
+   "key": "slow-c0ffee12",
+   "type": "slow_query",
+   "title": "Slow count query",
+   "severity": "medium",
+   "occurrences": 52,
+   "count_total": 52,
+   "total_ms": 1310.2,
+   "max_ms": 88.4,
+   "call_site": {
+    "file": "app/Livewire/PostTable.php",
+    "line": 27
+   },
+   "suggestion": "Add an index on posts.deleted_at or cache the count.",
+   "first_seen": "2026-10-27T18:33:59.346Z",
+   "last_seen": "2026-10-27T20:32:29.346Z",
+   "last_trace_id": "t3"
+  },
+  {
+   "key": "dup-1",
+   "type": "duplicate_query",
+   "title": "Same user lookup repeated <b>4x</b>",
+   "severity": "low",
+   "occurrences": 9,
+   "count_total": 36,
+   "total_ms": 40.1,
+   "max_ms": 6.5,
+   "call_site": {
+    "file": "app/Http/Middleware/Authenticate.php",
+    "line": 18
+   },
+   "suggestion": "Reuse the resolved user instead of querying again.",
+   "first_seen": "2026-10-27T19:33:59.346Z",
+   "last_seen": "2026-10-27T20:23:59.346Z",
+   "last_trace_id": "t2"
+  }
+ ]
+}

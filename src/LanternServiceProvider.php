@@ -6,6 +6,8 @@ use Illuminate\Support\ServiceProvider;
 use Lantern\Console\InstallCommand;
 use Lantern\Console\PruneCommand;
 use Lantern\Detection\Analyzer;
+use Lantern\Http\Middleware\Authorize;
+use Lantern\Storage\TraceQueries;
 use Lantern\Console\StatusCommand;
 use Lantern\Console\TraceDumpCommand;
 use Lantern\Instrumentation\Eloquent\LazyLoadInstrumentation;
@@ -29,6 +31,7 @@ class LanternServiceProvider extends ServiceProvider
     public function register(): void
     {
         $this->mergeConfigFrom(__DIR__.'/../config/lantern.php', 'lantern');
+        $this->ignoreOwnPath();
 
         if (! $this->tracingEnabled()) {
             return;
@@ -97,6 +100,8 @@ class LanternServiceProvider extends ServiceProvider
     public function boot(): void
     {
         $this->loadMigrationsFrom(__DIR__.'/../database/migrations');
+        $this->loadViewsFrom(__DIR__.'/../resources/views', 'lantern');
+        $this->registerRoutes();
 
         if ($this->app->runningInConsole()) {
             $this->publishes([
@@ -107,8 +112,40 @@ class LanternServiceProvider extends ServiceProvider
                 __DIR__.'/../database/migrations' => database_path('migrations'),
             ], 'lantern-migrations');
 
-            $this->commands([InstallCommand::class, StatusCommand::class, TraceDumpCommand::class, PruneCommand::class]);
+            $this->commands(array_values(array_filter([
+                InstallCommand::class, StatusCommand::class, TraceDumpCommand::class, PruneCommand::class,
+                \Lantern\Console\IssuesCommand::class, \Lantern\Console\TraceCommand::class,
+            ], 'class_exists')));
         }
+    }
+
+    private function ignoreOwnPath(): void
+    {
+        $config = $this->app['config'];
+        $path = trim((string) $config->get('lantern.path', 'lantern'), '/');
+        $ignored = (array) $config->get('lantern.ignore_paths', []);
+        foreach ([$path, $path.'/*'] as $pattern) {
+            if (! in_array($pattern, $ignored, true)) {
+                $ignored[] = $pattern;
+            }
+        }
+        $config->set('lantern.ignore_paths', $ignored);
+    }
+
+    private function registerRoutes(): void
+    {
+        if (! $this->tracingEnabled() || $this->app->routesAreCached()) {
+            return;
+        }
+
+        $this->app->singleton(TraceQueries::class, fn ($app) => new TraceQueries($app['db'], $app['config']->get('lantern.storage.connection')));
+
+        $config = $this->app['config'];
+        \Illuminate\Support\Facades\Route::group([
+            'domain' => $config->get('lantern.domain'),
+            'prefix' => trim((string) $config->get('lantern.path', 'lantern'), '/'),
+            'middleware' => array_merge((array) $config->get('lantern.middleware', ['web']), [Authorize::class]),
+        ], fn () => $this->loadRoutesFrom(__DIR__.'/../routes/lantern.php'));
     }
 
     private function tracingEnabled(): bool

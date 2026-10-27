@@ -115,6 +115,7 @@ final class Trace
             'id' => $span->id,
             'type' => $span->type->value,
             'name' => $span->name,
+            'start_ms' => round(max(0, $span->startNs - $this->startedAtNs) / 1_000_000, 3),
             'duration_ms' => $span->durationMs(),
             'self_ms' => $this->selfMs($span),
             'memory_delta' => $span->memoryDelta(),

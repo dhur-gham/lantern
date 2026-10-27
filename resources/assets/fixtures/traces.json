@@ -1,0 +1,95 @@
+{
+ "data": [
+  {
+   "id": "t1",
+   "started_at": "2026-10-27T20:33:51.346Z",
+   "duration_ms": 212.4,
+   "status": 200,
+   "method": "GET",
+   "path": "/api/posts",
+   "route": "/api/posts",
+   "query_count": 12,
+   "query_total_ms": 96.2,
+   "issue_count": 1,
+   "peak_memory": 10512608
+  },
+  {
+   "id": "t2",
+   "started_at": "2026-10-27T20:33:28.346Z",
+   "duration_ms": 38.1,
+   "status": 200,
+   "method": "GET",
+   "path": "/api/posts/12",
+   "route": "/api/posts/{id}",
+   "query_count": 3,
+   "query_total_ms": 9.4,
+   "issue_count": 0,
+   "peak_memory": 8769608
+  },
+  {
+   "id": "t3",
+   "started_at": "2026-10-27T20:32:24.346Z",
+   "duration_ms": 842.9,
+   "status": 200,
+   "method": "GET",
+   "path": "/admin/posts",
+   "route": "/admin/posts",
+   "query_count": 61,
+   "query_total_ms": 410.3,
+   "issue_count": 2,
+   "peak_memory": 16817608
+  },
+  {
+   "id": "t4",
+   "started_at": "2026-10-27T20:31:39.346Z",
+   "duration_ms": 14.2,
+   "status": 200,
+   "method": "GET",
+   "path": "/api/comments",
+   "route": "/api/comments",
+   "query_count": 1,
+   "query_total_ms": 2.1,
+   "issue_count": 0,
+   "peak_memory": 8530608
+  },
+  {
+   "id": "t5",
+   "started_at": "2026-10-27T20:28:59.346Z",
+   "duration_ms": 22.5,
+   "status": 404,
+   "method": "GET",
+   "path": "/api/posts/9999",
+   "route": "/api/posts/{id}",
+   "query_count": 2,
+   "query_total_ms": 4.4,
+   "issue_count": 0,
+   "peak_memory": 8613608
+  },
+  {
+   "id": "t6",
+   "started_at": "2026-10-27T20:18:59.346Z",
+   "duration_ms": 1210.7,
+   "status": 500,
+   "method": "POST",
+   "path": "/api/posts",
+   "route": "/api/posts",
+   "query_count": 8,
+   "query_total_ms": 77,
+   "issue_count": 1,
+   "peak_memory": 20495608
+  },
+  {
+   "id": "t7",
+   "started_at": "2026-10-27T20:13:59.346Z",
+   "duration_ms": 19.9,
+   "status": 200,
+   "method": "GET",
+   "path": "/<img src=x onerror=alert(1)>",
+   "route": "/<img src=x onerror=alert({id})>",
+   "query_count": 1,
+   "query_total_ms": 1.5,
+   "issue_count": 0,
+   "peak_memory": 8587608
+  }
+ ]
+}

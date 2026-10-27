@@ -87,6 +87,12 @@ return [
         'batch_size' => (int) env('LANTERN_STORAGE_BATCH_SIZE', 1),
     ],
 
+    // Developer UI and JSON API (registered only while Lantern is enabled). Gate with Lantern::auth(); the default
+    // allows the local environment only.
+    'path' => env('LANTERN_PATH', 'lantern'),
+    'domain' => env('LANTERN_DOMAIN'),
+    'middleware' => ['web'],
+
     'retention' => [
         'days' => (int) env('LANTERN_RETENTION_DAYS', 7),
         'issues_days' => (int) env('LANTERN_ISSUES_RETENTION_DAYS', 30),

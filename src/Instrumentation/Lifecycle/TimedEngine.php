@@ -9,25 +9,28 @@ use Illuminate\Contracts\View\Engine;
 use Lantern\Trace\Recorder;
 use Lantern\Trace\SpanType;
 
-/** Decorates the Blade engine (never replaces it) so each rendered view becomes a span. */
+/**
+ * Decorates the Blade engine (never replaces it) so each rendered view becomes a span.
+ * The wrapped engine lives in `$engine`: Laravel's exception renderer looks for that name on decorators.
+ */
 final class TimedEngine implements Engine
 {
     /** @param Closure(): Recorder $recorder */
-    public function __construct(private readonly Engine $inner, private readonly Closure $recorder) {}
+    public function __construct(private readonly Engine $engine, private readonly Closure $recorder) {}
 
     public function get($path, array $data = [])
     {
         $recorder = ($this->recorder)();
 
         if (! $recorder->isActive()) {
-            return $this->inner->get($path, $data);
+            return $this->engine->get($path, $data);
         }
 
         $span = $recorder->start(SpanType::View, ViewNames::fromPath((string) $path));
         $span->callSite = ['file' => (string) $path, 'line' => 1];
 
         try {
-            return $this->inner->get($path, $data);
+            return $this->engine->get($path, $data);
         } finally {
             $recorder->stop($span);
         }
@@ -35,12 +38,12 @@ final class TimedEngine implements Engine
 
     public function inner(): Engine
     {
-        return $this->inner;
+        return $this->engine;
     }
 
     /** @param array<int, mixed> $arguments */
     public function __call(string $method, array $arguments): mixed
     {
-        return $this->inner->{$method}(...$arguments);
+        return $this->engine->{$method}(...$arguments);
     }
 }

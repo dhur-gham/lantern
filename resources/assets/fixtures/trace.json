@@ -1,0 +1,412 @@
+{
+ "data": {
+  "id": "t1",
+  "started_at": "2026-10-27T20:33:51.346Z",
+  "duration_ms": 212.4,
+  "status": 200,
+  "method": "GET",
+  "path": "/api/posts",
+  "route": "/api/posts",
+  "query_count": 12,
+  "query_total_ms": 96.2,
+  "issue_count": 1,
+  "peak_memory": 10512608,
+  "tree": {
+   "id": "s1",
+   "type": "request",
+   "name": "GET /api/posts",
+   "duration_ms": 212.4,
+   "self_ms": 4,
+   "memory_delta": 6291456,
+   "call_site": null,
+   "meta": {},
+   "children": [
+    {
+     "id": "s2",
+     "type": "bootstrap",
+     "name": "bootstrap",
+     "duration_ms": 18.2,
+     "self_ms": 18.2,
+     "memory_delta": 1048576,
+     "meta": {},
+     "children": []
+    },
+    {
+     "id": "s3",
+     "type": "middleware",
+     "name": "Authenticate",
+     "duration_ms": 9.5,
+     "self_ms": 3,
+     "memory_delta": 40960,
+     "meta": {},
+     "children": [
+      {
+       "id": "q9",
+       "type": "query",
+       "name": "select * from `users` where `id` = ? limit 1",
+       "duration_ms": 6.5,
+       "self_ms": 6.5,
+       "memory_delta": 2048,
+       "call_site": {
+        "file": "app/Http/Controllers/PostController.php",
+        "line": 18,
+        "function": "index",
+        "class": "App\\Http\\Controllers\\PostController"
+       },
+       "meta": {
+        "sql": "select * from `users` where `id` = ? limit 1",
+        "bindings": [
+         7
+        ],
+        "fingerprint": "a91f03c2",
+        "time_ms": 6.5,
+        "failed": false
+       },
+       "children": []
+      }
+     ]
+    },
+    {
+     "id": "s4",
+     "type": "controller",
+     "name": "PostController@index",
+     "duration_ms": 150.1,
+     "self_ms": 12,
+     "memory_delta": 4194304,
+     "call_site": {
+      "file": "app/Http/Controllers/PostController.php",
+      "line": 38,
+      "function": "index",
+      "class": "App\\Http\\Controllers\\PostController"
+     },
+     "meta": {},
+     "children": [
+      {
+       "id": "s5",
+       "type": "validation",
+       "name": "IndexPostRequest",
+       "duration_ms": 2.2,
+       "self_ms": 2.2,
+       "memory_delta": 8192,
+       "meta": {},
+       "children": []
+      },
+      {
+       "id": "q10",
+       "type": "query",
+       "name": "select * from `posts` order by `created_at` desc limit 50",
+       "duration_ms": 31.4,
+       "self_ms": 31.4,
+       "memory_delta": 2048,
+       "call_site": {
+        "file": "app/Http/Controllers/PostController.php",
+        "line": 40,
+        "function": "index",
+        "class": "App\\Http\\Controllers\\PostController"
+       },
+       "meta": {
+        "sql": "select * from `posts` order by `created_at` desc limit 50",
+        "bindings": [],
+        "fingerprint": "a91f03c2",
+        "time_ms": 31.4,
+        "failed": false
+       },
+       "children": []
+      },
+      {
+       "id": "q1",
+       "type": "query",
+       "name": "select * from `comments` where `comments`.`post_id` = ?",
+       "duration_ms": 3.3000000000000003,
+       "self_ms": 3.3000000000000003,
+       "memory_delta": 2048,
+       "call_site": {
+        "file": "app/Http/Controllers/PostController.php",
+        "line": 42,
+        "function": "index",
+        "class": "App\\Http\\Controllers\\PostController"
+       },
+       "meta": {
+        "sql": "select * from `comments` where `comments`.`post_id` = ?",
+        "bindings": [
+         1
+        ],
+        "fingerprint": "a91f03c2",
+        "time_ms": 3.3000000000000003,
+        "failed": false
+       },
+       "children": []
+      },
+      {
+       "id": "q2",
+       "type": "query",
+       "name": "select * from `comments` where `comments`.`post_id` = ?",
+       "duration_ms": 3.5,
+       "self_ms": 3.5,
+       "memory_delta": 2048,
+       "call_site": {
+        "file": "app/Http/Controllers/PostController.php",
+        "line": 42,
+        "function": "index",
+        "class": "App\\Http\\Controllers\\PostController"
+       },
+       "meta": {
+        "sql": "select * from `comments` where `comments`.`post_id` = ?",
+        "bindings": [
+         2
+        ],
+        "fingerprint": "a91f03c2",
+        "time_ms": 3.5,
+        "failed": false
+       },
+       "children": []
+      },
+      {
+       "id": "q3",
+       "type": "query",
+       "name": "select * from `comments` where `comments`.`post_id` = ?",
+       "duration_ms": 3.7,
+       "self_ms": 3.7,
+       "memory_delta": 2048,
+       "call_site": {
+        "file": "app/Http/Controllers/PostController.php",
+        "line": 42,
+        "function": "index",
+        "class": "App\\Http\\Controllers\\PostController"
+       },
+       "meta": {
+        "sql": "select * from `comments` where `comments`.`post_id` = ?",
+        "bindings": [
+         3
+        ],
+        "fingerprint": "a91f03c2",
+        "time_ms": 3.7,
+        "failed": false
+       },
+       "children": []
+      },
+      {
+       "id": "q4",
+       "type": "query",
+       "name": "select * from `comments` where `comments`.`post_id` = ?",
+       "duration_ms": 3.9000000000000004,
+       "self_ms": 3.9000000000000004,
+       "memory_delta": 2048,
+       "call_site": {
+        "file": "app/Http/Controllers/PostController.php",
+        "line": 42,
+        "function": "index",
+        "class": "App\\Http\\Controllers\\PostController"
+       },
+       "meta": {
+        "sql": "select * from `comments` where `comments`.`post_id` = ?",
+        "bindings": [
+         4
+        ],
+        "fingerprint": "a91f03c2",
+        "time_ms": 3.9000000000000004,
+        "failed": false
+       },
+       "children": []
+      },
+      {
+       "id": "q5",
+       "type": "query",
+       "name": "select * from `comments` where `comments`.`post_id` = ?",
+       "duration_ms": 4.1,
+       "self_ms": 4.1,
+       "memory_delta": 2048,
+       "call_site": {
+        "file": "app/Http/Controllers/PostController.php",
+        "line": 42,
+        "function": "index",
+        "class": "App\\Http\\Controllers\\PostController"
+       },
+       "meta": {
+        "sql": "select * from `comments` where `comments`.`post_id` = ?",
+        "bindings": [
+         5
+        ],
+        "fingerprint": "a91f03c2",
+        "time_ms": 4.1,
+        "failed": false
+       },
+       "children": []
+      },
+      {
+       "id": "q6",
+       "type": "query",
+       "name": "select * from `comments` where `comments`.`post_id` = ?",
+       "duration_ms": 4.300000000000001,
+       "self_ms": 4.300000000000001,
+       "memory_delta": 2048,
+       "call_site": {
+        "file": "app/Http/Controllers/PostController.php",
+        "line": 42,
+        "function": "index",
+        "class": "App\\Http\\Controllers\\PostController"
+       },
+       "meta": {
+        "sql": "select * from `comments` where `comments`.`post_id` = ?",
+        "bindings": [
+         6
+        ],
+        "fingerprint": "a91f03c2",
+        "time_ms": 4.300000000000001,
+        "failed": false
+       },
+       "children": []
+      },
+      {
+       "id": "q7",
+       "type": "query",
+       "name": "select * from `comments` where `comments`.`post_id` = ?",
+       "duration_ms": 4.5,
+       "self_ms": 4.5,
+       "memory_delta": 2048,
+       "call_site": {
+        "file": "app/Http/Controllers/PostController.php",
+        "line": 42,
+        "function": "index",
+        "class": "App\\Http\\Controllers\\PostController"
+       },
+       "meta": {
+        "sql": "select * from `comments` where `comments`.`post_id` = ?",
+        "bindings": [
+         7
+        ],
+        "fingerprint": "a91f03c2",
+        "time_ms": 4.5,
+        "failed": false
+       },
+       "children": []
+      },
+      {
+       "id": "q8",
+       "type": "query",
+       "name": "select * from `comments` where `comments`.`post_id` = ?",
+       "duration_ms": 4.7,
+       "self_ms": 4.7,
+       "memory_delta": 2048,
+       "call_site": {
+        "file": "app/Http/Controllers/PostController.php",
+        "line": 42,
+        "function": "index",
+        "class": "App\\Http\\Controllers\\PostController"
+       },
+       "meta": {
+        "sql": "select * from `comments` where `comments`.`post_id` = ?",
+        "bindings": [
+         8
+        ],
+        "fingerprint": "a91f03c2",
+        "time_ms": 4.7,
+        "failed": false
+       },
+       "children": []
+      },
+      {
+       "id": "s6",
+       "type": "livewire",
+       "name": "App\\Livewire\\PostTable",
+       "duration_ms": 40,
+       "self_ms": 8,
+       "memory_delta": 786432,
+       "meta": {
+        "filament": {
+         "panel": "admin",
+         "resource": "PostResource"
+        }
+       },
+       "children": [
+        {
+         "id": "s7",
+         "type": "cache",
+         "name": "get posts.count",
+         "duration_ms": 0.6,
+         "self_ms": 0.6,
+         "memory_delta": 512,
+         "meta": {
+          "hit": true
+         },
+         "children": []
+        },
+        {
+         "id": "s8",
+         "type": "query",
+         "name": "select count(*) from `posts` where `deleted_at` is null",
+         "duration_ms": 12.7,
+         "self_ms": 12.7,
+         "memory_delta": 1024,
+         "call_site": {
+          "file": "app/Livewire/PostTable.php",
+          "line": 27,
+          "function": "render",
+          "class": "App\\Livewire\\PostTable"
+         },
+         "meta": {
+          "sql": "select count(*) from `posts` where `deleted_at` is null",
+          "bindings": [],
+          "fingerprint": "c0ffee12",
+          "time_ms": 12.7,
+          "failed": false
+         },
+         "children": []
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "s9",
+     "type": "view",
+     "name": "posts.index",
+     "duration_ms": 24,
+     "self_ms": 24,
+     "memory_delta": 524288,
+     "call_site": {
+      "file": "resources/views/posts/index.blade.php",
+      "line": 1,
+      "view": "posts.index"
+     },
+     "meta": {},
+     "children": []
+    }
+   ]
+  },
+  "issues": [
+   {
+    "type": "n_plus_one",
+    "key": "n1-a91f03c2",
+    "title": "N+1: comments loaded one post at a time",
+    "severity": "high",
+    "count": 8,
+    "total_ms": 28.8,
+    "call_site": {
+     "file": "app/Http/Controllers/PostController.php",
+     "line": 42
+    },
+    "suggestion": "Eager load the relation: Post::with('comments').",
+    "meta": {
+     "fingerprint": "a91f03c2"
+    }
+   },
+   {
+    "type": "slow_query",
+    "key": "slow-c0ffee12",
+    "title": "Slow count query",
+    "severity": "medium",
+    "count": 1,
+    "total_ms": 12.7,
+    "call_site": {
+     "file": "app/Livewire/PostTable.php",
+     "line": 27
+    },
+    "suggestion": "Add an index on posts.deleted_at or cache the count.",
+    "meta": {
+     "fingerprint": "c0ffee12"
+    }
+   }
+  ]
+ }
+}

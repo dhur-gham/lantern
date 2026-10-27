@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Lantern preview</title>
+<link rel="stylesheet" href="lantern.css">
+</head>
+<body>
+<!-- Standalone preview. Serve this folder over HTTP (php -S 127.0.0.1:8099 -t resources/assets) and open
+     preview.html?page=traces|trace|issues|issue. Add &empty=1 or &error=1 for those states. -->
+<header class="top">
+<a class="brand" href="preview.html?page=traces">Lantern</a>
+<nav class="nav"><a href="preview.html?page=traces">Traces</a><a href="preview.html?page=issues">Issues</a></nav>
+</header>
+<main class="wrap" id="app"></main>
+<script>
+(function () {
+  var q = new URLSearchParams(location.search), page = q.get('page') || 'traces';
+  document.body.dataset.page = page;
+  document.body.dataset.id = q.get('id') || 'x';
+  document.body.dataset.base = '';
+  window.LANTERN_LINK = function (p) {
+    var m;
+    if ((m = p.match(/^\/traces\/(.+)$/))) return 'preview.html?page=trace&id=' + m[1];
+    if ((m = p.match(/^\/issues\/(.+)$/))) return 'preview.html?page=issue&id=' + m[1];
+    return p === '/issues' ? 'preview.html?page=issues' : 'preview.html?page=traces';
+  };
+  window.LANTERN_FETCH = function (url) {
+    if (q.get('error')) return Promise.reject(new Error('The API answered HTTP 500 (preview).'));
+    var f = /\/api\/traces\/./.test(url) ? 'trace' : /\/api\/traces/.test(url) ? 'traces' : /\/api\/issues\/./.test(url) ? 'issue' : 'issues';
+    if (q.get('empty') && (f === 'traces' || f === 'issues')) return Promise.resolve({ data: [] });
+    return new Promise(function (ok) { setTimeout(ok, 250); }).then(function () { return fetch('fixtures/' + f + '.json').then(function (r) { return r.json(); }); });
+  };
+})();
+</script>
+<script src="lantern.js"></script>
+</body>
+</html>

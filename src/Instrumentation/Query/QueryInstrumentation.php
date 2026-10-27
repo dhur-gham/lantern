@@ -53,6 +53,14 @@ final class QueryInstrumentation
 
     private ?Fingerprinter $fingerprinter = null;
 
+    private ?string $lazyTrace = null;
+
+    /** @var array<string, int> fingerprint => executions seen in the current trace (lazy mode) */
+    private array $seen = [];
+
+    /** @var array<string, list<\Lantern\Trace\Span>> spans recorded without a call site, per fingerprint */
+    private array $early = [];
+
     public function __construct(private readonly Application $app)
     {
         $this->hooked = new WeakMap;
@@ -108,7 +116,7 @@ final class QueryInstrumentation
             'sql' => $query,
             'bindings' => $bindings,
             'start' => hrtime(true),
-            'site' => $this->site($recorder),
+            'site' => $this->lazy() ? null : $this->site($recorder),
             'trace' => $recorder->trace()?->id,
         ];
     }
@@ -139,7 +147,7 @@ final class QueryInstrumentation
             'sql' => $event->sql,
             'bindings' => $event->bindings,
             'start' => $now - $duration,
-            'site' => $this->site($recorder),
+            'site' => $this->lazy() ? null : $this->site($recorder),
         ];
 
         $start = (int) $slot['start'];
@@ -247,32 +255,85 @@ final class QueryInstrumentation
      */
     private function record(Recorder $recorder, Connection $connection, array $slot, int $startNs, int $endNs, array $extra): void
     {
-        $sql = (string) $slot['sql'];
-        $bindings = (array) $slot['bindings'];
+        $sql = $slot['sql'];
         $fingerprinter = $this->fingerprinter();
 
         $normalized = $fingerprinter?->normalize($sql) ?? trim((string) preg_replace('/\s+/', ' ', $sql));
+        $fingerprint = $fingerprinter?->fingerprint($sql) ?? md5($normalized);
 
-        $meta = [
-            'sql' => $sql,
-            'fingerprint' => $fingerprinter?->fingerprint($sql) ?? md5($normalized),
-        ];
+        $meta = ['sql' => $sql, 'fingerprint' => $fingerprint];
 
         if ($this->config('capture_normalized_sql', true)) {
             $meta['normalized_sql'] = $normalized;
         }
         if ($fingerprinter !== null) {
-            $meta['bindings_key'] = $fingerprinter->bindingsKey($sql, $bindings);
+            $meta['bindings_key'] = $fingerprinter->bindingsKey($sql, $slot['bindings']);
         }
         if ($this->captureBindings()) {
-            $meta['bindings'] = $this->sanitizeBindings($bindings);
+            $meta['bindings'] = $this->sanitizeBindings($slot['bindings']);
         }
 
         $meta['connection'] = $connection->getName();
         $meta['transaction_level'] = $connection->transactionLevel();
-        $meta = [...$meta, ...$extra];
+        foreach ($extra as $key => $value) {
+            $meta[$key] = $value;
+        }
 
-        $recorder->recordClosed(SpanType::Query, mb_substr($normalized, 0, 80), $startNs, $endNs, $meta, $slot['site'] ?? null);
+        $site = $slot['site'] ?? null;
+        $earlier = [];
+        $track = false;
+        if ($site === null && $extra['failed'] === false && $this->lazy()) {
+            [$site, $earlier, $track] = $this->lazySite($recorder, $fingerprint, (float) $extra['time_ms']);
+        }
+
+        $span = $recorder->recordClosed(SpanType::Query, mb_substr($normalized, 0, 80), $startNs, $endNs, $meta, $site);
+
+        if ($track) {
+            $this->early[$fingerprint][] = $span;
+        }
+        if ($site !== null) {
+            foreach ($earlier as $prior) {
+                $prior->callSite = $site;
+            }
+        }
+    }
+
+    private function lazy(): bool
+    {
+        return $this->config('call_site_mode', $this->config('mode', 'dev') === 'dev' ? 'all' : 'lazy') === 'lazy';
+    }
+
+    /**
+     * Lazy mode: resolve only for slow queries or once a fingerprint repeats enough to be an N+1 candidate.
+     *
+     * @return array{0: ?array<string, mixed>, 1: list<\Lantern\Trace\Span>, 2: bool} site, earlier spans to backfill, whether to track this span
+     */
+    private function lazySite(Recorder $recorder, string $fingerprint, float $ms): array
+    {
+        $traceId = $recorder->trace()?->id;
+        if ($traceId !== $this->lazyTrace) {
+            $this->lazyTrace = $traceId;
+            $this->seen = [];
+            $this->early = [];
+        }
+
+        $count = $this->seen[$fingerprint] = ($this->seen[$fingerprint] ?? 0) + 1;
+        $min = max(2, (int) $this->config('thresholds.n_plus_one_min_repeats', 5));
+        $repeat = $count >= $min;
+
+        $site = null;
+        if ($repeat || $ms >= (float) $this->config('thresholds.slow_query_ms', 100) / 4) {
+            $site = $this->site($recorder);
+        }
+
+        if ($repeat) {
+            $earlier = $this->early[$fingerprint] ?? [];
+            unset($this->early[$fingerprint]);
+
+            return [$site, $earlier, false];
+        }
+
+        return [$site, [], $site === null];
     }
 
     /**
