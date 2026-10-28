@@ -53,7 +53,7 @@ class StatusCommand extends Command
     {
         $host = (string) parse_url($url, PHP_URL_HOST);
 
-        return $host === '' || $host === 'localhost' || $host === '::1' || $host === '[::1]' || str_starts_with($host, '127.') || str_ends_with($host, '.test') || str_ends_with($host, '.localhost');
+        return $host === 'localhost' || $host === '::1' || $host === '[::1]' || str_starts_with($host, '127.') || str_ends_with($host, '.test') || str_ends_with($host, '.localhost');
     }
 
     private function version(string $package): string

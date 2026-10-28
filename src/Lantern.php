@@ -30,9 +30,15 @@ final class Lantern
         return app()->environment('local') && self::isLoopback($request);
     }
 
-    /** The TCP peer address, not forwarded headers, so a proxy header cannot make a remote client look local. */
+    /** The TCP peer address, never trusting forwarded headers; any forwarding header means a proxy or tunnel, so not local. */
     private static function isLoopback(Request $request): bool
     {
+        foreach (['X-Forwarded-For', 'Forwarded', 'X-Forwarded-Host', 'X-Real-IP'] as $header) {
+            if ($request->headers->has($header)) {
+                return false;
+            }
+        }
+
         $ip = (string) $request->server('REMOTE_ADDR', '');
 
         return $ip === '::1' || str_starts_with($ip, '127.') || $ip === '::ffff:127.0.0.1';

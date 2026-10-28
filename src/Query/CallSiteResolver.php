@@ -145,7 +145,7 @@ final class CallSiteResolver
             return true;
         }
 
-        // PHP < 8.4 names closures `Namespace\{closure}` with no method, and lazy() frames carry nothing else
+        // PHP < 8.4 names closures `Namespace\{closure}` with no method; these are the paging closures (chunkMap, each, lazy, ...) and carry nothing else
         if ($function === 'Illuminate\Database\Concerns\{closure}') {
             return true;
         }

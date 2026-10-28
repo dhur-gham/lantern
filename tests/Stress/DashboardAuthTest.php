@@ -91,6 +91,18 @@ final class DashboardAuthTest extends StressTestCase
             ->assertForbidden();
     }
 
+    public function test_tunnelled_requests_are_forbidden_even_from_loopback(): void
+    {
+        $this->seedSecretTrace();
+
+        foreach (['X-Forwarded-For' => '203.0.113.9', 'Forwarded' => 'for=203.0.113.9', 'X-Forwarded-Host' => 'abc.ngrok.io', 'X-Real-IP' => '203.0.113.9'] as $header => $value) {
+            $this->withServerVariables(['REMOTE_ADDR' => '127.0.0.1'])
+                ->withHeaders([$header => $value])
+                ->getJson('/lantern/api/traces')
+                ->assertForbidden();
+        }
+    }
+
     public function test_custom_gate_decides_alone_for_non_loopback_clients(): void
     {
         Lantern::auth(fn (Request $r) => true);
