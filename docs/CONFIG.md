@@ -19,6 +19,7 @@ Published to `config/lantern.php` by `php artisan lantern:install`. Source of tr
 | `ignore_sql_patterns` | `[]` | none | Substring, or regex when starting with `/`; matching SQL is skipped. |
 | `detectors` | all six detector classes | none | Detector classes run on each finished trace (`NPlusOne`, `DuplicateQuery`, `SlowQuery`, `MemoryHog`, `MissingIndex`, `LazyLoad`). |
 | `explain` | `false` | `LANTERN_EXPLAIN` | Run EXPLAIN on slow queries to detect missing indexes. |
+| `explain_min_rows` | not set (`100`) | none | Optional, not in the published file. With `explain` on, scans estimated at this many rows or fewer are not reported as missing indexes. |
 | `capture_bindings` | `null` (on in dev mode, off otherwise) | `LANTERN_CAPTURE_BINDINGS` | Record bound values on query spans. Bindings named password/token/secret are always redacted. |
 | `binding_max_length` | `200` | none | Longer string bindings are truncated. |
 | `capture_normalized_sql` | `true` | none | Store the normalized SQL on query spans. |

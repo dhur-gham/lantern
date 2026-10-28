@@ -7,7 +7,7 @@ description: Debug slow Laravel requests and query problems (N+1, lazy loading, 
 
 1. Enable: `LANTERN_ENABLED=true` and `LANTERN_STORAGE_DRIVER=database` locally (then migrate). Never in production without sampling.
 2. Reproduce with a feature test or a real request to the route. Seed >= 3 related rows.
-3. `php artisan lantern:issues --format=json --limit=5`. Pick one issue; note `related_trace_ids[0]` (or `evidence.trace_id` from `lantern:issue`) as BEFORE.
+3. `php artisan lantern:issues --format=json --limit=5`. Pick one issue; note `evidence.trace_id` from `lantern:issue` (or `related_trace_ids[0]`) as BEFORE.
 4. `php artisan lantern:issue {id} --format=json`; open `call_site.file` at `call_site.line`.
 5. Fix using the pattern below. Prefer fixing the query over any config change.
 6. Re-run the reproduction, then `php artisan lantern:diff {before} {after}`: expect the issue in `resolved`, `new` empty, `queries.delta` negative.

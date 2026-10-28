@@ -6,7 +6,7 @@ Lantern records request traces and detects performance issues with `file:line`. 
 - Reproduce with an in-process feature test or a real request. Seed at least 3 related rows or N+1 will not show.
 - Find: `php artisan lantern:issues --format=json --limit=10`. Fix the highest-severity issue first.
 - Inspect: `php artisan lantern:issue {id} --format=json`; `php artisan lantern:trace --last --summary --format=json`.
-- Verify after every edit: `php artisan lantern:diff {before} {after}` and `php artisan lantern:check --route=<route> --no-new-issues`.
+- Verify after every edit: `php artisan lantern:diff {before} last` and `php artisan lantern:check --route=<route> --no-new-issues`.
 - Do not ignore an issue or raise a threshold to pass a check. Fix the query (eager load, index, `select()`).
 
 Exit codes: 0 ok, 1 `lantern:check` failed, 2 usage/config/storage error (also unknown options), 3 no data. Results carry `next` (suggested next command) and `hint`; follow them.
