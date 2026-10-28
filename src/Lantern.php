@@ -16,13 +16,26 @@ final class Lantern
         self::$auth = $callback;
     }
 
+    public static function hasAuth(): bool
+    {
+        return self::$auth !== null;
+    }
+
     public static function check(Request $request): bool
     {
         if (self::$auth !== null) {
             return (bool) (self::$auth)($request);
         }
 
-        return app()->environment('local');
+        return app()->environment('local') && self::isLoopback($request);
+    }
+
+    /** The TCP peer address, not forwarded headers, so a proxy header cannot make a remote client look local. */
+    private static function isLoopback(Request $request): bool
+    {
+        $ip = (string) $request->server('REMOTE_ADDR', '');
+
+        return $ip === '::1' || str_starts_with($ip, '127.') || $ip === '::ffff:127.0.0.1';
     }
 
     /** Contents of a bundled dashboard asset (views are compiled, so `__DIR__` in a view is the cache dir). */

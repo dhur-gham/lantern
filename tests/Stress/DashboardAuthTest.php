@@ -64,6 +64,40 @@ final class DashboardAuthTest extends StressTestCase
         }
     }
 
+    public function test_local_environment_is_forbidden_for_non_loopback_clients(): void
+    {
+        $id = $this->seedSecretTrace();
+
+        foreach (['203.0.113.9', '10.0.0.5', '172.18.0.1'] as $ip) {
+            $this->withServerVariables(['REMOTE_ADDR' => $ip])->getJson('/lantern/api/traces/'.$id)->assertForbidden();
+            $this->withServerVariables(['REMOTE_ADDR' => $ip])->get('/lantern')->assertForbidden();
+        }
+    }
+
+    public function test_local_environment_allows_loopback_clients(): void
+    {
+        $this->seedSecretTrace();
+
+        foreach (['127.0.0.1', '::1'] as $ip) {
+            $this->withServerVariables(['REMOTE_ADDR' => $ip])->getJson('/lantern/api/traces')->assertOk();
+        }
+    }
+
+    public function test_forwarded_headers_cannot_make_a_remote_client_look_local(): void
+    {
+        $this->withServerVariables(['REMOTE_ADDR' => '203.0.113.9'])
+            ->withHeaders(['X-Forwarded-For' => '127.0.0.1', 'X-Real-IP' => '127.0.0.1'])
+            ->getJson('/lantern/api/traces')
+            ->assertForbidden();
+    }
+
+    public function test_custom_gate_decides_alone_for_non_loopback_clients(): void
+    {
+        Lantern::auth(fn (Request $r) => true);
+
+        $this->withServerVariables(['REMOTE_ADDR' => '203.0.113.9'])->getJson('/lantern/api/traces')->assertOk();
+    }
+
     public function test_production_pages_are_forbidden_and_do_not_leak(): void
     {
         $id = $this->seedSecretTrace();
