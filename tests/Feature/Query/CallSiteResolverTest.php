@@ -112,7 +112,7 @@ final class CallSiteResolverTest extends TestCase
 
     public function test_compiled_blade_frame_maps_to_original_view(): void
     {
-        $dir = str_replace('\\', '/', sys_get_temp_dir()).'/lantern-cs-'.uniqid();
+        $dir = str_replace('\\', '/', (string) realpath(sys_get_temp_dir())).'/lantern-cs-'.uniqid();
         $views = $dir.'/resources/views';
         mkdir($views, 0777, true);
         mkdir($dir.'/storage/framework/views', 0777, true);
@@ -192,6 +192,12 @@ final class CallSiteResolverTest extends TestCase
             ['file' => '/proj/app/Job.php', 'line' => 7, 'function' => 'x'],
         ];
         $this->assertTrue($r->resolveFromTrace($lazy)['paging']);
+
+        $lazyBefore84 = [
+            ['file' => '/proj/vendor/laravel/framework/src/Illuminate/Database/Concerns/BuildsQueries.php', 'line' => 1, 'function' => 'Illuminate\Database\Concerns\{closure}', 'class' => $db],
+            ['file' => '/proj/app/Job.php', 'line' => 7, 'function' => 'x'],
+        ];
+        $this->assertTrue($r->resolveFromTrace($lazyBefore84)['paging']);
 
         // query issued inside the chunk callback: app frame comes first
         $callback = [

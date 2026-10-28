@@ -26,7 +26,7 @@ use Lantern\Trace\Recorder;
 
 class LanternServiceProvider extends ServiceProvider
 {
-    public const VERSION = '0.2.0';
+    public const VERSION = '0.3.0';
 
     public function register(): void
     {

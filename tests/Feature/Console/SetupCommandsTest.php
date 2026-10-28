@@ -40,6 +40,26 @@ final class SetupCommandsTest extends TestCase
         $this->assertStringContainsString('enabled under the testing environment', Artisan::output());
     }
 
+    public function test_status_warns_when_local_env_serves_a_non_loopback_url(): void
+    {
+        config(['lantern.enabled' => true, 'lantern.kill_switch' => false, 'lantern.storage.driver' => 'database', 'lantern.keep_rate' => 1, 'app.url' => 'https://example.com']);
+        $this->app['env'] = 'local';
+        \Lantern\Lantern::flush();
+
+        Artisan::call('lantern:status');
+        $this->assertStringContainsString('is not loopback', Artisan::output());
+
+        config(['app.url' => 'http://myapp.test']);
+        Artisan::call('lantern:status');
+        $this->assertStringNotContainsString('is not loopback', Artisan::output());
+
+        config(['app.url' => 'https://example.com']);
+        \Lantern\Lantern::auth(fn () => false);
+        Artisan::call('lantern:status');
+        $this->assertStringNotContainsString('is not loopback', Artisan::output());
+        \Lantern\Lantern::flush();
+    }
+
     public function test_status_is_quiet_when_configured(): void
     {
         config(['lantern.enabled' => true, 'lantern.kill_switch' => false, 'lantern.storage.driver' => 'database', 'lantern.keep_rate' => 1]);

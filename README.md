@@ -262,7 +262,7 @@ or open `/lantern` in the browser.
 
 ## Dashboard
 
-Visit `/lantern` (change with `LANTERN_PATH` or `LANTERN_DOMAIN`). It is registered only while Lantern is enabled and, by default, only allows the `local` environment. Gate it yourself, for example in a service provider:
+Visit `/lantern` (change with `LANTERN_PATH` or `LANTERN_DOMAIN`). It is registered only while Lantern is enabled and, by default, only serves the `local` environment to loopback clients (127.0.0.1 or ::1, judged by the TCP peer, and any request carrying a forwarding header such as X-Forwarded-For is refused, so tunnels like Expose or ngrok are not let in); any other environment gets 403. Behind Docker, a VM or a remote dev host, or on any server, gate it yourself, for example in a service provider:
 
 ```php
 use Lantern\Lantern;

@@ -4,6 +4,7 @@ namespace Lantern\Console;
 
 use Composer\InstalledVersions;
 use Illuminate\Console\Command;
+use Lantern\Lantern;
 use Lantern\LanternServiceProvider;
 use Lantern\Sampling\Sampler;
 
@@ -38,11 +39,21 @@ class StatusCommand extends Command
         if ($enabled && (float) config('lantern.thresholds.explain_min_ms', 0) > 0) {
             $this->warn('thresholds.explain_min_ms is '.config('lantern.thresholds.explain_min_ms').': missing_index depends on query timing. Set LANTERN_EXPLAIN_MIN_MS=0 or re-publish the config (lantern:install --force).');
         }
+        if ($enabled && $this->laravel->environment('local') && ! Lantern::hasAuth() && ! $this->isLoopbackUrl((string) config('app.url'))) {
+            $this->warn('Lantern is enabled with APP_ENV=local and APP_URL "'.config('app.url').'" is not loopback. If this is a server, set APP_ENV=production and gate the dashboard with Lantern::auth(); the default gate serves only loopback clients.');
+        }
         if ($enabled && $this->laravel->environment('testing')) {
             $this->warn('Lantern is enabled under the testing environment; keep it off in phpunit.xml.');
         }
 
         return self::SUCCESS;
+    }
+
+    private function isLoopbackUrl(string $url): bool
+    {
+        $host = (string) parse_url($url, PHP_URL_HOST);
+
+        return $host === 'localhost' || $host === '::1' || $host === '[::1]' || str_starts_with($host, '127.') || str_ends_with($host, '.test') || str_ends_with($host, '.localhost');
     }
 
     private function version(string $package): string

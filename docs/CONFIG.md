@@ -49,4 +49,4 @@ Published to `config/lantern.php` by `php artisan lantern:install`. Source of tr
 | `retention.days` | `7` | `LANTERN_RETENTION_DAYS` | Trace retention for `lantern:prune`. |
 | `retention.issues_days` | `30` | `LANTERN_ISSUES_RETENTION_DAYS` | Issue retention for `lantern:prune`. |
 
-The dashboard gate is code, not config: `Lantern::auth(fn ($request) => ...)`. Default allows the `local` environment only.
+The dashboard gate is code, not config: `Lantern::auth(fn ($request) => ...)`. Without a gate, only `APP_ENV=local` requests from a loopback peer (127.0.0.1, ::1) are allowed; every other environment or client gets 403. Behind Docker or a remote dev host, set `Lantern::auth`.
