@@ -93,4 +93,16 @@ final class SetupCommandsTest extends TestCase
             }
         }
     }
+
+    public function test_migrations_publish_under_their_packaged_names(): void
+    {
+        $paths = \Illuminate\Support\ServiceProvider::pathsToPublish(\Lantern\LanternServiceProvider::class, 'lantern-migrations');
+        $this->assertSame([database_path('migrations')], array_values($paths));
+
+        $source = (string) array_key_first($paths);
+        $this->assertSame(
+            ['2024_01_01_000001_create_lantern_traces_table.php', '2024_01_01_000002_create_lantern_issues_table.php'],
+            array_values(array_diff((array) scandir($source), ['.', '..'])),
+        );
+    }
 }
