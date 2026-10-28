@@ -25,25 +25,21 @@ php artisan lantern:install && php artisan migrate
 Load a page that lists records, then:
 
 ```bash
-php artisan lantern:issues --format=json
+php artisan lantern:issues --format=json --limit=1 --fields=type,severity,title,call_site
 ```
-
-The top finding (trimmed):
 
 ```json
-{"type":"n_plus_one","severity":"critical",
- "title":"N+1: Post::tags lazy-loaded x50 at app/Http/Resources/PostResource.php:16", ...}
+{
+  "type": "n_plus_one",
+  "severity": "critical",
+  "title": "N+1: Post::tags lazy-loaded x50 at app/Http/Resources/PostResource.php:16",
+  "call_site": {"file": "app/Http/Resources/PostResource.php", "line": 16, "function": "toArray"}
+}
 ```
 
-Fix it, reload the page, and compare:
+*(One element of the command's `issues` array.)* Fix it, reload the page, then `php artisan lantern:diff <before> last` reports `"verdict": "improved"`: queries 152 → 4, three issues resolved, none new.
 
-```
-$ php artisan lantern:diff <before> last
-{"verdict":"improved","queries":{"before":152,"after":4,"delta":-148},
- "query_ms":{"before":213.16,"after":10.42,"delta":-202.74},"resolved":[3 n_plus_one issues],"new":[]}
-```
-
-*(Real output from a seeded Laravel 12 application, 50 posts per page. Details [below](#a-real-before-and-after).)*
+*(Real output from a seeded Laravel 12 application, 50 posts per page. Full output [below](#a-real-before-and-after).)*
 
 ---
 
@@ -82,24 +78,51 @@ The goal: spend less time searching through logs and more time fixing the code r
 
 ## A real before and after
 
-Setup: a seeded Laravel 12 application (20,000 posts, 200,000 comments, MySQL 8.4), an API endpoint that returns 50 posts through a JSON resource. Lantern recorded the request with the database storage driver.
+Setup: a seeded Laravel 12 application on SQLite (200 posts), an API endpoint that returns 50 posts through a JSON resource. Lantern recorded the request with the database storage driver. All JSON below is real command output, reformatted for reading.
 
-**1. Detect.** `lantern:issues --format=json` lists three critical issues from one request, each with its call site (titles shortened here, one line each):
-
-```
-critical  n_plus_one  N+1: Post::author lazy-loaded x50   app/Http/Resources/PostResource.php:14
-critical  n_plus_one  N+1: comment count query x50        app/Http/Resources/PostResource.php:15
-critical  n_plus_one  N+1: Post::tags lazy-loaded x50     app/Http/Resources/PostResource.php:16
-```
-
-**2. Inspect.** `lantern:issue <id> --format=json` returns the evidence (trimmed):
+**1. Detect.** `lantern:issues --format=json --limit=3 --fields=type,severity,title,call_site` lists three critical issues from one request:
 
 ```json
-{"issue":{"type":"n_plus_one","severity":"critical",
-  "title":"N+1: Post::tags lazy-loaded x50 at app/Http/Resources/PostResource.php:16",
-  "call_site":{"file":"app/Http/Resources/PostResource.php","line":16},
-  "evidence":{"trace_id":"db034b8d-...","sql_shape":"select `tags`.*, ... where `post_tag`.`post_id` = ?","avg_ms":1.35}},
- "next":"Fix call_site, re-run the request, then: php artisan lantern:diff db034b8d-... last"}
+[
+  {"type": "n_plus_one", "severity": "critical", "title": "N+1: Post::tags lazy-loaded x50 at app/Http/Resources/PostResource.php:16", "call_site": {"file": "app/Http/Resources/PostResource.php", "line": 16, "function": "toArray"}},
+  {"type": "n_plus_one", "severity": "critical", "title": "N+1: Post::author lazy-loaded x50 at app/Http/Resources/PostResource.php:14", "call_site": {"file": "app/Http/Resources/PostResource.php", "line": 14, "function": "toArray"}},
+  {"type": "n_plus_one", "severity": "critical", "title": "N+1: select count(*)as aggregate from \"comments\" where \"commen... x50 at app/Http/Resources/PostResource.php:15", "call_site": {"file": "app/Http/Resources/PostResource.php", "line": 15, "function": "toArray"}}
+]
+```
+
+(That is the `issues` array of the command's output; the real output also carries `schema_version`, `total`, `next` and more. Long titles are cut by Lantern itself, not by this README.)
+
+**2. Inspect.** `lantern:issue <id> --format=json` returns the evidence:
+
+```json
+{
+  "schema_version": 1,
+  "schema": "lantern.issue",
+  "issue": {
+    "id": "3d38497142b5bfebdd684895c16696a1",
+    "type": "n_plus_one",
+    "severity": "critical",
+    "title": "N+1: Post::tags lazy-loaded x50 at app/Http/Resources/PostResource.php:16",
+    "call_site": {"file": "app/Http/Resources/PostResource.php", "line": 16, "function": "toArray"},
+    "occurrences": 1,
+    "count_total": 50,
+    "total_ms": 4.95,
+    "max_ms": 0.1,
+    "suggestion": "Eager load the relation on the parent query: ->with('tags'). Use Model::preventLazyLoading() in non-production to catch these early.",
+    "first_seen": "2026-10-28T10:04:06+00:00",
+    "last_seen": "2026-10-28T10:04:06+00:00",
+    "related_trace_ids": ["ece87a01-2edc-4d58-8c47-ea75ed7fab60"],
+    "evidence": {
+      "trace_id": "ece87a01-2edc-4d58-8c47-ea75ed7fab60",
+      "sample_sql": null,
+      "sql_shape": "select \"tags\".*, \"post_tag\".\"post_id\" as \"pivot_post_id\", \"post_tag\".\"tag_id\" as \"pivot_tag_id\" from \"tags\" inner join \"post_tag\" on \"tags\".\"id\" = \"post_tag\".\"tag_id\" where \"post_tag\".\"post_id\" = ?",
+      "bindings": null,
+      "parent": "Illuminate\\Routing\\Middleware\\SubstituteBindings",
+      "avg_ms": 0.1
+    }
+  },
+  "next": "Fix call_site, re-run the request, then: php artisan lantern:diff ece87a01-2edc-4d58-8c47-ea75ed7fab60 last"
+}
 ```
 
 **3. Fix.** The resource read `$this->author`, `$this->comments()->count()` and `$this->tags` once per post. The controller now loads them up front:
@@ -115,22 +138,44 @@ Post::query()->with(['author', 'tags'])->withCount('comments')->paginate(50);
 **4. Compare.** Request the endpoint again, then `lantern:diff <before> last`:
 
 ```json
-{"verdict":"improved",
- "before":{"path":"/api/posts/n-plus-one","issue_count":3},
- "after":{"path":"/api/posts/fixed","issue_count":0},
- "queries":{"before":152,"after":4,"delta":-148},
- "query_ms":{"before":213.16,"after":10.42,"delta":-202.74},
- "resolved":[3 n_plus_one issues],"new":[]}
+{
+  "schema_version": 1,
+  "schema": "lantern.diff",
+  "verdict": "improved",
+  "before": {"trace_id": "ece87a01-2edc-4d58-8c47-ea75ed7fab60", "route": null, "path": "/api/posts/n-plus-one", "issue_count": 3},
+  "after": {"trace_id": "3e2a5fb2-6330-45b6-952b-4c126f44a549", "route": null, "path": "/api/posts/fixed", "issue_count": 0},
+  "queries": {"before": 152, "after": 4, "delta": -148},
+  "query_ms": {"before": 15.49, "after": 2.53, "delta": -12.96},
+  "duration_ms": {"before": 371, "after": 319, "delta": -52},
+  "resolved": [
+    {"id": "3d38497142b5bfebdd684895c16696a1", "type": "n_plus_one", "severity": "critical", "title": "N+1: Post::tags lazy-loaded x50 at app/Http/Resources/PostResource.php:16", "call_site": {"file": "app/Http/Resources/PostResource.php", "line": 16, "function": "toArray"}, "count": 50, "total_ms": 4.95},
+    {"id": "d8fe5406d9a1af8ecbcc926b22a012d0", "type": "n_plus_one", "severity": "critical", "title": "N+1: Post::author lazy-loaded x50 at app/Http/Resources/PostResource.php:14", "call_site": {"file": "app/Http/Resources/PostResource.php", "line": 14, "function": "toArray"}, "count": 50, "total_ms": 4.25},
+    {"id": "1ea348769e62a15b0866903e0ee2bb18", "type": "n_plus_one", "severity": "critical", "title": "N+1: select count(*)as aggregate from \"comments\" where \"commen... x50 at app/Http/Resources/PostResource.php:15", "call_site": {"file": "app/Http/Resources/PostResource.php", "line": 15, "function": "toArray"}, "count": 50, "total_ms": 4.2}
+  ],
+  "new": [],
+  "unchanged": []
+}
 ```
 
-**5. Check.**
+**5. Check.** `lantern:check --route=/api/posts/fixed --no-new-issues` exits `0`:
 
-```
-$ php artisan lantern:check --route=/api/posts/fixed --no-new-issues      # exit 0
-$ php artisan lantern:check --route=/api/posts/n-plus-one --no-new-issues # exit 1, lists the 3 violations
+```json
+{
+  "schema_version": 1,
+  "schema": "lantern.check",
+  "pass": true,
+  "exit_code": 0,
+  "thresholds": {"fail_on": "critical", "no_new_issues": true},
+  "scope": {"route": "/api/posts/fixed", "traces_checked": 1, "issues_checked": 0},
+  "violation_count": 0,
+  "truncated": false,
+  "violations": []
+}
 ```
 
-Query counts here went from 152 to 4. Timings are from one machine and one run; use counts and issue presence, not milliseconds, as your regression signal.
+The same check on `/api/posts/n-plus-one` returns `"pass": false`, `"exit_code": 1` and `"violation_count": 3`, one violation per N+1 issue.
+
+Query counts went from 152 to 4. Timings are from one machine and one run (SQLite, so small); use counts and issue presence, not milliseconds, as your regression signal.
 
 ## What you can do with it
 
