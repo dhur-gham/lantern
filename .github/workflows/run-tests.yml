@@ -45,8 +45,9 @@ jobs:
           coverage: none
 
       - name: Install dependencies
+        shell: bash
         run: |
-          if [ "${{ matrix.stability }}" = "prefer-lowest" ]; then
+          if [ "${{ matrix.stability }}" = "prefer-lowest" ] || [ "${{ matrix.laravel }}" = "11.*" ]; then
             composer config policy.advisories.block false || composer config audit.block-insecure false
           fi
           composer require "laravel/framework:${{ matrix.laravel }}" "orchestra/testbench:${{ matrix.testbench }}" --no-interaction --no-update
