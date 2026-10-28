@@ -22,7 +22,7 @@ return [
         'slow_query_ms' => (int) env('LANTERN_SLOW_QUERY_MS', 100),
         'memory_delta_mb' => (float) env('LANTERN_MEMORY_DELTA_MB', 32),
         // Queries slower than this are candidates for EXPLAIN (when 'explain' is on).
-        'explain_min_ms' => (float) env('LANTERN_EXPLAIN_MIN_MS', 2),
+        'explain_min_ms' => (float) env('LANTERN_EXPLAIN_MIN_MS', 0),
         'max_issues_per_trace' => 50,
     ],
 
@@ -97,7 +97,14 @@ return [
 
     // Tail sampling (applied when a trace finishes): slow, 5xx, failed and issue-bearing traces are always kept.
     'keep_slow_ms' => (int) env('LANTERN_KEEP_SLOW_MS', 1000),
-    'keep_rate' => (float) env('LANTERN_KEEP_RATE', 0.1),
+    // lantern:diff counts a time change as better or worse only beyond max(pct of before, ms).
+    'diff' => [
+        'tolerance_pct' => (float) env('LANTERN_DIFF_TOLERANCE_PCT', 20),
+        'tolerance_ms' => (float) env('LANTERN_DIFF_TOLERANCE_MS', 5),
+    ],
+
+    // null: keep every clean trace in the local environment, 0.1 elsewhere.
+    'keep_rate' => env('LANTERN_KEEP_RATE'),
 
     'storage' => [
         // memory | database

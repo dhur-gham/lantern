@@ -19,7 +19,7 @@ The query detectors (N+1, duplicate, slow, missing index) skip transaction marke
 
 **What it catches.** A query that repeats once per row of a loop, for example loading each post's author inside `foreach ($posts as $post)`.
 
-**How it is detected.** Every query is normalized into a fingerprint: literals, bindings, `IN (...)` list length and insert row count are removed, so `where user_id = 1` and `where user_id = 2` share one shape. Queries are grouped by fingerprint plus call site. A group with at least `thresholds.n_plus_one_min_repeats` members becomes an issue. Queries issued from inside `chunk()`, `chunkById()`, `lazy()`, `lazyById()`, `each()` and their variants are paging, not N+1, and are never grouped.
+**How it is detected.** Shapes are explained in the order they first appear, up to 25 per trace, never ranked by time, so the same SQL gives the same finding on every run. Every query is normalized into a fingerprint: literals, bindings, `IN (...)` list length and insert row count are removed, so `where user_id = 1` and `where user_id = 2` share one shape. Queries are grouped by fingerprint plus call site. A group with at least `thresholds.n_plus_one_min_repeats` members becomes an issue. Queries issued from inside `chunk()`, `chunkById()`, `lazy()`, `lazyById()`, `each()` and their variants are paging, not N+1, and are never grouped.
 
 **Severity.** `critical` when the count is at least 4 times the threshold (20 by default) or the group's total time reaches 500 ms. Otherwise `warning`.
 
@@ -142,7 +142,7 @@ Order::where('status', 'paid')->latest()->take(100)->get();
 
 **What it catches.** SELECT statements that the database plans as a full table scan on a filtered column.
 
-**How it is detected.** Off by default; set `explain` to `true`. When a trace finishes, Lantern takes the query shapes that took at least `thresholds.explain_min_ms` (never above `slow_query_ms`), picks the slowest five, and runs `EXPLAIN` on one sample of each against the same connection (`EXPLAIN QUERY PLAN` on SQLite). Only SELECT statements are explained. A shape is reported when the plan shows a full scan and the query has a WHERE predicate other than a primary-key lookup. Where the database estimates rows (MySQL, MariaDB, PostgreSQL), scans of 100 rows or fewer are ignored; SQLite has no estimate, so any scan with a column predicate counts. The suggested index lists the columns found in the WHERE clause.
+**How it is detected.** Off by default; set `explain` to `true`. When a trace finishes, Lantern takes the query shapes that took at least `thresholds.explain_min_ms` (default 0, so every SELECT shape qualifies and the result does not depend on one run's timing; never above `slow_query_ms`), runs `EXPLAIN` on one sample of each against the same connection (`EXPLAIN QUERY PLAN` on SQLite). Only SELECT statements are explained. A shape is reported when the plan shows a full scan and the query has a WHERE predicate other than a primary-key lookup. Where the database estimates rows (MySQL, MariaDB, PostgreSQL), scans of 100 rows or fewer are ignored; SQLite has no estimate, so any scan with a column predicate counts. The suggested index lists the columns found in the WHERE clause.
 
 **Severity.** Always `warning`.
 

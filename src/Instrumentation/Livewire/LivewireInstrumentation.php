@@ -47,6 +47,16 @@ final class LivewireInstrumentation
                 });
             });
 
+            Livewire::listen('update', static function (...$args) use ($app): void {
+                self::guard(static function () use ($app, $args): void {
+                    $recorder = self::recorder($app);
+                    $trace = $recorder?->isActive() ? $recorder->trace() : null;
+                    if ($trace !== null && ($args[0] ?? null) instanceof \Livewire\Component && is_string($args[1] ?? null) && self::isUpdate()) {
+                        $trace->meta['route'] = 'livewire:'.$args[0]::class.' updated '.$args[1];
+                    }
+                });
+            });
+
             Livewire::listen('mount', static fn (...$args) => self::phaseWithFinish($app, 'mount', $args[0] ?? null, null));
             Livewire::listen('render', static fn (...$args) => self::phaseWithFinish($app, 'render', $args[0] ?? null, null));
             Livewire::listen('call', static fn (...$args) => self::phaseWithFinish($app, 'call', $args[0] ?? null, is_string($args[1] ?? null) ? $args[1] : null));
@@ -72,6 +82,7 @@ final class LivewireInstrumentation
             $name = $component instanceof \Livewire\Component ? class_basename($component).' '.($method !== null ? 'call '.$method : $phase) : $phase;
             $span = $recorder->start(SpanType::Livewire, $name, $meta);
             self::touch($recorder, $meta['component'] ?? null);
+            self::label($recorder, $meta['component'] ?? null, $method);
 
             return static function (...$ret) use ($recorder, $span): void {
                 try {
@@ -97,6 +108,7 @@ final class LivewireInstrumentation
             $name = $component instanceof \Livewire\Component ? class_basename($component).' '.$phase : $phase;
             $recorder->recordClosed(SpanType::Livewire, $name, $now, $now, $meta);
             self::touch($recorder, $meta['component'] ?? null);
+            self::label($recorder, $meta['component'] ?? null, null);
         });
     }
 
@@ -121,6 +133,29 @@ final class LivewireInstrumentation
         } catch (Throwable) {
             return false;
         }
+    }
+
+    private static function label(Recorder $recorder, mixed $class, ?string $method): void
+    {
+        $trace = $recorder->trace();
+        if ($trace === null || ! is_string($class) || ! self::isUpdate()) {
+            return;
+        }
+
+        $current = (string) ($trace->meta['route'] ?? '');
+        $named = str_starts_with($current, 'livewire:');
+        if ($method === null ? $named : str_contains($current, '@')) {
+            return;
+        }
+
+        if ($method === '$commit') {
+            return;
+        }
+        if ($method !== null && str_starts_with($method, '$set')) {
+            $method = null;
+        }
+
+        $trace->meta['route'] = 'livewire:'.$class.($method !== null ? '@'.$method : '');
     }
 
     private static function touch(Recorder $recorder, mixed $class): void

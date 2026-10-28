@@ -95,12 +95,18 @@ final class TraceDiffCheckTest extends AgentTestCase
         [$code, $data] = $this->jsonOut('lantern:diff', ['before' => 'before', 'after' => 'after']);
 
         $this->assertSame(0, $code);
-        $this->assertSame(['schema_version', 'schema', 'verdict', 'before', 'after', 'queries', 'query_ms', 'duration_ms', 'resolved', 'new', 'unchanged'], array_keys($data));
+        $this->assertSame(['schema_version', 'schema', 'verdict', 'before', 'after', 'dimensions', 'queries', 'query_ms', 'duration_ms', 'resolved', 'new', 'threshold', 'unchanged'], array_keys($data));
         $this->assertSame(['before' => 51, 'after' => 3, 'delta' => -48], $data['queries']);
         $this->assertSame(['before' => 100, 'after' => 20, 'delta' => -80], $data['duration_ms']);
         $this->assertSame(['k1'], array_column($data['resolved'], 'id'));
         $this->assertSame(['k3'], array_column($data['new'], 'id'));
         $this->assertSame(['k2'], array_column($data['unchanged'], 'id'));
+        $this->assertSame('improved', $data['verdict']);
+        $this->assertSame(['queries' => 'improved', 'query_ms' => 'improved', 'duration_ms' => 'improved', 'findings' => ['resolved' => 1, 'new' => 1, 'verdict' => 'same']], $data['dimensions']);
+
+        $this->seedTrace('worse', 3, ['k9'], 20, '2026-01-01 13:00:00');
+        $this->seedTrace('base', 3, [], 20, '2026-01-01 14:00:00');
+        [, $data] = $this->jsonOut('lantern:diff', ['before' => 'base', 'after' => 'worse']);
         $this->assertSame('regressed', $data['verdict']);
 
         [, $data] = $this->jsonOut('lantern:diff', ['before' => 'after', 'after' => 'after']);
@@ -243,5 +249,26 @@ final class TraceDiffCheckTest extends AgentTestCase
         $this->assertSame('***@x.io', Redactor::mask('bob@x.io'));
         $this->assertSame('[token]', Redactor::mask('sk_live_abcdefghijklmnopqrstuvwxyz'));
         $this->assertSame('[number]', Redactor::mask('4111 1111 1111 1111'));
+    }
+
+    public function test_diff_ignores_timing_noise_and_threshold_findings(): void
+    {
+        $this->seedTrace('a', 3, [], 100, '2026-01-01 10:00:00');
+        $this->seedTrace('b', 3, [], 110, '2026-01-01 11:00:00');
+
+        [, $data] = $this->jsonOut('lantern:diff', ['before' => 'a', 'after' => 'b']);
+        $this->assertSame('same', $data['dimensions']['duration_ms']);
+        $this->assertSame('same', $data['verdict']);
+
+        $key = \Lantern\Detection\Issue::key('missing_index', 'fp1');
+        $this->seedTrace('c', 3, [$key], 100, '2026-01-01 12:00:00');
+        \Illuminate\Support\Facades\DB::table('lantern_traces')->where('id', 'c')->update([
+            'payload' => str_replace('"type":"n_plus_one"', '"type":"missing_index"', (string) \Illuminate\Support\Facades\DB::table('lantern_traces')->where('id', 'c')->value('payload')),
+        ]);
+
+        [, $data] = $this->jsonOut('lantern:diff', ['before' => 'a', 'after' => 'c']);
+        $this->assertSame([], $data['new']);
+        $this->assertSame([$key], array_column($data['threshold'], 'id'));
+        $this->assertSame('same', $data['verdict']);
     }
 }

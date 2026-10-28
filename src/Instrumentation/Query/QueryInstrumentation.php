@@ -370,7 +370,15 @@ final class QueryInstrumentation
     {
         $value = $this->config('capture_bindings', null);
 
-        return $value === null ? $this->config('mode', 'dev') === 'dev' : (bool) $value;
+        if ($value !== null) {
+            return (bool) $value;
+        }
+
+        try {
+            return $this->config('mode', 'dev') === 'dev' && app()->environment('local');
+        } catch (\Throwable) {
+            return false;
+        }
     }
 
     /**
@@ -391,7 +399,7 @@ final class QueryInstrumentation
 
             $out[$key] = match (true) {
                 $value === null, is_bool($value), is_int($value), is_float($value) => $value,
-                is_string($value) => $this->truncate($value, $max),
+                is_string($value) => $this->looksSensitive($value) ? '[redacted]' : $this->truncate($value, $max),
                 $value instanceof \DateTimeInterface => $value->format('Y-m-d H:i:s'),
                 $value instanceof \Stringable => $this->truncate((string) $value, $max),
                 is_object($value) => '['.$value::class.']',
@@ -400,6 +408,13 @@ final class QueryInstrumentation
         }
 
         return $out;
+    }
+
+    private function looksSensitive(string $value): bool
+    {
+        return preg_match('/^[^@\s]+@[^@\s]+\.[^@\s]+$/', $value) === 1
+            || preg_match('/^(bearer\s+)?[\w-]{8,}\.[\w-]{8,}\.[\w-]{8,}$/i', $value) === 1
+            || preg_match('/^(sk|pk|ghp|gho|xox[bap])[-_][\w-]{16,}$/i', $value) === 1;
     }
 
     private function truncate(string $value, int $max): string

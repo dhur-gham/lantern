@@ -66,7 +66,7 @@ Compare two traces.
 
 Flags: `--format=json`, `--pretty`.
 
-Schema `lantern.diff`: `verdict` (`regressed` when there are new issues or more queries, `improved` when issues resolved or queries dropped, else `same`), `before` and `after` (`trace_id route path issue_count`), `queries`, `query_ms`, `duration_ms` (each `before after delta`), `resolved[]`, `new[]`, `unchanged[]` (issues). Exits 0 on success whatever the verdict.
+Schema `lantern.diff`: `verdict` (issues weighted by severity, new minus resolved: above zero is `regressed`, below zero `improved`; on a tie the query count decides, else `same`), `dimensions` (`queries`, `query_ms`, `findings {resolved new verdict}`, each `improved|same|regressed`), `before` and `after` (`trace_id route path issue_count`), `queries`, `query_ms`, `duration_ms` (each `before after delta`), `resolved[]`, `new[]`, `threshold[]` (missing_index on a query shape that ran in both traces: not new), `unchanged[]` (issues). Time dimensions (`query_ms`, `duration_ms`) read `same` within max(`diff.tolerance_pct` of before, `diff.tolerance_ms`), default 20% and 5 ms. Exits 0 on success whatever the verdict.
 
 ```
 php artisan lantern:diff <before-id> last --format=json
@@ -94,7 +94,7 @@ php artisan lantern:check --baseline=lantern-baseline.json --no-new-issues
 
 Human-readable output, no JSON.
 
-- `lantern:install [--force]` publishes config and migrations.
-- `lantern:status` prints enabled state, version, mode, Laravel and Livewire versions.
+- `lantern:install [--force] [--local]` publishes config and migrations; `--local` also writes `LANTERN_ENABLED=true`, `LANTERN_STORAGE_DRIVER=database` and `LANTERN_KEEP_RATE=1` to `.env`.
+- `lantern:status` prints enabled state, version, mode, storage driver, keep rate, Laravel and Livewire versions, and warns when traces would be missing (non-database storage, keep rate below 1 locally, enabled under `testing`).
 - `lantern:prune [--days=] [--issues-days=] [--dry-run]` deletes traces and issues past retention (defaults `lantern.retention.days` 7 and `issues_days` 30) and prints the counts.
 - `lantern:trace:dump [--last]` prints the latest in-process trace or `storage/lantern/last-trace.json` (needs `LANTERN_DEBUG_WRITE_LAST_TRACE=true`); exits 1 when none is found.

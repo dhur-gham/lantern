@@ -66,9 +66,19 @@ final class Sampler
             return true;
         }
 
-        $keep = $this->rate($this->config['keep_rate'] ?? 0.1);
+        $keep = $this->rate($this->config['keep_rate'] ?? self::defaultKeepRate());
 
         return $keep >= 1.0 || ($keep > 0.0 && ($this->random)() < $keep);
+    }
+
+    /** Clean traces are all kept locally, so a before/after diff always has both sides. */
+    public static function defaultKeepRate(): float
+    {
+        try {
+            return function_exists('app') && app()->isLocal() ? 1.0 : 0.1;
+        } catch (\Throwable) {
+            return 0.1;
+        }
     }
 
     private function rate(mixed $value): float

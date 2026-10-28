@@ -48,6 +48,15 @@ class LifecycleTraceTest extends LifecycleTestCase
         $this->assertStringContainsString('[controller]', TraceFormatter::tree($trace));
     }
 
+    public function test_route_meta_is_name_else_uri(): void
+    {
+        $this->get('/named')->assertOk();
+        $this->assertSame('things.named', $this->recorder()->trace()->meta['route']);
+
+        $this->get('/things')->assertOk();
+        $this->assertSame('/things', $this->recorder()->trace()->meta['route']);
+    }
+
     public function test_invokable_and_closure_controllers_are_timed(): void
     {
         $this->get('/invokable')->assertOk();
