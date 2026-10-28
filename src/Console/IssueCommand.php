@@ -29,6 +29,10 @@ final class IssueCommand extends AgentCommand
 
         $payload = ['schema_version' => Findings::VERSION, 'schema' => 'lantern.issue'];
         $payload['issue'] = Output::project([$finding], $fields)[0];
+        $trace = $finding['evidence']['trace_id'] ?? null;
+        if (is_string($trace) && $trace !== '') {
+            $payload['next'] = 'Fix call_site, re-run the request, then: php artisan lantern:diff '.$trace.' last';
+        }
 
         $this->emit($payload, null);
 

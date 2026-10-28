@@ -16,7 +16,7 @@ final class TraceDiffCheckTest extends AgentTestCase
 
         $this->assertSame(0, $code);
         $this->assertSame(
-            ['schema_version', 'schema', 'trace_id', 'started_at', 'method', 'path', 'route', 'status', 'duration_ms', 'query_count', 'query_ms', 'peak_memory', 'issue_count', 'issues', 'query_groups', 'truncated'],
+            ['schema_version', 'schema', 'trace_id', 'started_at', 'method', 'path', 'route', 'status', 'duration_ms', 'query_count', 'query_ms', 'peak_memory', 'issue_count', 'issues', 'query_groups', 'truncated', 'next'],
             array_keys($data),
         );
         $this->assertSame(51, $data['query_count']);

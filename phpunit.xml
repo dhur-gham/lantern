@@ -13,6 +13,11 @@
             <directory>tests/Stress</directory>
         </testsuite>
     </testsuites>
+    <php>
+        <env name="APP_ENV" value="testing"/>
+        <env name="APP_DEBUG" value="false"/>
+        <env name="CACHE_STORE" value="array"/>
+    </php>
     <source>
         <include>
             <directory>src</directory>

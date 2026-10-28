@@ -18,9 +18,23 @@ final class Sampler
         $this->random = $random ?? static fn (): float => mt_rand() / mt_getrandmax();
     }
 
+    private bool $granted = false;
+
+    /** The provider already rolled for this single-execution process; the first head decision reuses that roll. */
+    public function grantFirst(): void
+    {
+        $this->granted = true;
+    }
+
     /** Decided once per execution. Pass a key (e.g. a request id) for a deterministic decision. */
     public function headDecision(?string $key = null): bool
     {
+        if ($this->granted) {
+            $this->granted = false;
+
+            return true;
+        }
+
         $rate = $this->rate($this->config['sampling_rate'] ?? 1.0);
         if ($rate >= 1.0) {
             return true;

@@ -18,6 +18,7 @@ use Illuminate\Routing\Events\RouteMatched;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Validation\Factory as ValidationFactory;
 use Illuminate\Container\Container;
+use Lantern\Sampling\Sampler;
 use Lantern\Trace\Recorder;
 use Lantern\Trace\Span;
 use Lantern\Trace\SpanType;
@@ -39,6 +40,9 @@ final class LifecycleInstrumentation
     private bool $handled = false;
 
     private bool $firstBegin = true;
+
+    /** The current execution lost the head roll; request rebinds mid-flight must not roll again. */
+    private bool $unsampled = false;
 
     private bool $terminatingHooked = false;
 
@@ -68,6 +72,7 @@ final class LifecycleInstrumentation
         $events->listen(RequestHandled::class, fn (RequestHandled $e) => $this->guard(fn () => $this->requestHandled($e)));
         // Registered once: terminating callbacks are never cleared, so adding one per request grows without bound in long-lived processes.
         $events->listen(Terminating::class, fn () => $this->guard(function (): void {
+            $this->unsampled = false;
             if ($this->terminatingHooked) {
                 return;
             }
@@ -100,6 +105,10 @@ final class LifecycleInstrumentation
 
     public function beginRequest(Request $request): void
     {
+        if ($this->unsampled) {
+            return;
+        }
+
         $recorder = $this->recorder();
 
         if ($recorder->isActive()) {
@@ -114,6 +123,13 @@ final class LifecycleInstrumentation
         $this->validations = new WeakMap;
 
         if ($this->ignored($request)) {
+            return;
+        }
+
+        // Per-execution head decision: an unsampled request leaves the recorder inactive, so every hook is a no-op.
+        if (! $this->app->make(Sampler::class)->headDecision()) {
+            $this->unsampled = true;
+
             return;
         }
 
@@ -320,13 +336,15 @@ final class LifecycleInstrumentation
     {
         $reset = function (): void {
             $this->guard(function (): void {
+                $this->unsampled = false;
                 $this->finish();
                 $this->recorder()->reset();
                 $this->routeSpan = null;
             });
         };
 
-        foreach (['Laravel\\Octane\\Events\\RequestReceived', 'Laravel\\Octane\\Events\\RequestTerminated'] as $class) {
+        foreach (['RequestReceived', 'RequestTerminated', 'TaskReceived', 'TaskTerminated', 'TickReceived', 'TickTerminated'] as $name) {
+            $class = 'Laravel\\Octane\\Events\\'.$name;
             if (class_exists($class)) {
                 $events->listen($class, $reset);
             }

@@ -6,6 +6,8 @@ namespace Lantern\Agent;
 
 use Illuminate\Console\Command;
 use Lantern\Storage\TraceQueries;
+use Symfony\Component\Console\Exception\ExceptionInterface;
+use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
 use Throwable;
 
@@ -15,6 +17,23 @@ abstract class AgentCommand extends Command
     protected array $itemFields = [];
 
     abstract protected function perform(Reader $reader): int;
+
+    /** Unknown options and missing arguments exit 2 (usage), never 1, which is reserved for a failed lantern:check. */
+    public function run(InputInterface $input, OutputInterface $output): int
+    {
+        try {
+            return parent::run($input, $output);
+        } catch (ExceptionInterface $e) {
+            $error = AgentException::usage($e->getMessage(), 'Run: php artisan '.$this->getName().' --help');
+            $format = strtolower((string) $input->getParameterOption('--format', 'table'));
+            $text = in_array($format, ['table', 'markdown'], true) || ! in_array($format, Output::FORMATS, true)
+                ? $error->getMessage().PHP_EOL.$error->hint
+                : (string) json_encode($error->toPayload(), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+            $output->writeln($text, OutputInterface::OUTPUT_RAW);
+
+            return $error->exitCode;
+        }
+    }
 
     public function handle(): int
     {
@@ -31,8 +50,20 @@ abstract class AgentCommand extends Command
         } catch (AgentException $e) {
             return $this->failWith($e);
         } catch (Throwable $e) {
-            return $this->failWith(new AgentException(AgentException::STORAGE, 'Could not read Lantern storage: '.$e->getMessage(), 2));
+            return $this->failWith($this->storageError($e));
         }
+    }
+
+    private function storageError(Throwable $e): AgentException
+    {
+        $message = trim((string) preg_replace('/\s*\(Connection:.*$/s', '', $e->getMessage()));
+        $hint = match (true) {
+            (bool) preg_match('/base table or view not found|no such table|undefined table|doesn.t exist/i', $message) => 'Lantern tables are missing. Run php artisan migrate; if it says nothing to migrate, delete the lantern_* rows from the migrations table and migrate again.',
+            (bool) preg_match('/connection refused|could not find driver|access denied|unknown database|getaddrinfo/i', $message) => 'Check the DB_* settings (or LANTERN_DB_CONNECTION) and that the database is running.',
+            default => null,
+        };
+
+        return new AgentException(AgentException::STORAGE, 'Could not read Lantern storage: '.$message, 2, $hint);
     }
 
     protected function format(): string

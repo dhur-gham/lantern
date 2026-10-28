@@ -63,7 +63,9 @@ final class Reader
             $row = $matches[0] ?? null;
         }
         if ($row === null) {
-            throw AgentException::notFound('Issue not found: '.$key, 'List ids with: php artisan lantern:issues --format=json');
+            throw AgentException::notFound('Issue not found: '.$key, strlen($key) < 6
+                ? 'An id prefix needs at least 6 characters. List ids with: php artisan lantern:issues --format=json'
+                : 'List ids with: php artisan lantern:issues --format=json');
         }
 
         return $row;
@@ -113,6 +115,9 @@ final class Reader
             if (is_string($sample) && $sample !== '') {
                 $evidence['sample_sql'] = Redactor::sql($sample);
                 $evidence['sql_shape'] = Redactor::sql((string) ($nodeMeta['normalized_sql'] ?? $sample));
+                if ($evidence['sample_sql'] === $evidence['sql_shape']) {
+                    $evidence['sample_sql'] = null;
+                }
             }
             if (isset($nodeMeta['bindings']) && is_array($nodeMeta['bindings'])) {
                 $evidence['bindings'] = Redactor::bindings($nodeMeta['bindings'], $withBindings);
@@ -160,7 +165,7 @@ final class Reader
         }
         $trace = $this->queries->trace($id);
         if ($trace === null) {
-            throw AgentException::notFound('Trace not found: '.$id, 'List recent ids with: php artisan lantern:trace --last --format=json');
+            throw AgentException::notFound('Trace not found: '.$id, 'Use a trace id from lantern:issue (evidence.trace_id) or lantern:issues (related_trace_ids), or the keyword last.');
         }
 
         return $trace;
@@ -255,6 +260,9 @@ final class Reader
             'query_groups' => $groups,
             'truncated' => $groupCount > $top,
         ];
+        if ($findings !== []) {
+            $summary['next'] = 'php artisan lantern:issue '.$findings[0]['id'].' --format=json';
+        }
         if ($groupCount > $top) {
             $summary['hint'] = sprintf('%d of %d query groups shown; add --limit=%d to see more.', $top, $groupCount, min(self::MAX_ROWS, $groupCount));
         }

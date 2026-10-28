@@ -26,6 +26,8 @@ final class IssuesCommand extends AgentCommand
 
     protected $description = 'List detected performance issues (stable finding model)';
 
+    private const TYPES = ['n_plus_one', 'lazy_load', 'duplicate_query', 'slow_query', 'missing_index', 'memory_hog'];
+
     protected array $itemFields = Findings::ALL_FIELDS;
 
     protected function perform(Reader $reader): int
@@ -34,12 +36,20 @@ final class IssuesCommand extends AgentCommand
         if (! in_array($sort, ['total_ms', 'occurrences', 'last_seen'], true)) {
             throw AgentException::usage('Invalid --sort: '.$sort, 'Use total_ms, occurrences or last_seen.');
         }
+        $type = strtolower((string) $this->option('type'));
+        if ($type !== '' && ! in_array($type, self::TYPES, true)) {
+            throw AgentException::usage('Invalid --type: '.$type, 'Use one of: '.implode(', ', self::TYPES).'.');
+        }
+        $severity = strtolower((string) $this->option('severity'));
+        if ($severity !== '' && ! in_array($severity, ['critical', 'high', 'error', 'warning', 'warn', 'medium', 'info', 'low'], true)) {
+            throw AgentException::usage('Invalid --severity: '.$severity, 'Use critical, warning or info (aliases high, error, warn, medium, low also match).');
+        }
         $limit = $this->intOption('limit', 10, 1);
         $offset = $this->intOption('offset', 0);
         $fields = $this->fields() ?? ($this->option('full') ? Findings::ALL_FIELDS : Findings::DEFAULT_FIELDS);
         $filters = array_filter([
-            'type' => $this->option('type'),
-            'severity' => $this->option('severity'),
+            'type' => $type,
+            'severity' => $severity,
             'sort' => $sort,
         ], fn ($v) => $v !== null && $v !== '');
 
@@ -69,6 +79,13 @@ final class IssuesCommand extends AgentCommand
         ];
         if (! $exact) {
             $payload['total_capped'] = true;
+        }
+        if ($findings !== []) {
+            $payload['next'] = 'php artisan lantern:issue '.$findings[0]['id'].' --format=json';
+        } elseif ($total === 0 && $this->format() !== 'table') {
+            $payload['hint'] = $filters === [] || array_keys($filters) === ['sort']
+                ? 'No issues stored. Run the app with LANTERN_ENABLED=true and LANTERN_STORAGE_DRIVER=database, hit the route, then retry.'
+                : 'No issues match these filters; drop --type, --severity or --since.';
         }
         if ($truncated) {
             $payload['next_offset'] = $offset + count($findings);

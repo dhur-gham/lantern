@@ -14,7 +14,8 @@ final class IssuesAgentTest extends AgentTestCase
         [$code, $data] = $this->jsonOut('lantern:issues');
 
         $this->assertSame(0, $code);
-        $this->assertSame(['schema_version', 'schema', 'generated_at', 'total', 'returned', 'offset', 'truncated', 'issues'], array_keys($data));
+        $this->assertSame(['schema_version', 'schema', 'generated_at', 'total', 'returned', 'offset', 'truncated', 'next', 'issues'], array_keys($data));
+        $this->assertSame('php artisan lantern:issue '.$data['issues'][0]['id'].' --format=json', $data['next']);
         $this->assertSame(1, $data['schema_version']);
         $this->assertSame('lantern.issues', $data['schema']);
         $this->assertSame(['id', 'type', 'severity', 'title', 'call_site', 'occurrences', 'total_ms', 'suggestion'], array_keys($data['issues'][0]));
@@ -138,7 +139,9 @@ final class IssuesAgentTest extends AgentTestCase
 
         $this->assertSame(0, $code);
         $this->assertSame('t1', $e['trace_id']);
-        $this->assertSame('select * from `users` where `email` = ? and `id` = ?', $e['sample_sql']);
+        $this->assertSame('select * from `users` where `email` = ? and `id` = ?', $e['sql_shape']);
+        $this->assertNull($e['sample_sql'], 'sample_sql is omitted when identical to sql_shape');
+        $this->assertStringContainsString('lantern:diff t1 last', $data['next']);
         $this->assertSame(['[redacted:string]', '[redacted:number]'], $e['bindings']);
         $this->assertSame('PostController@index', $e['parent']);
         $this->assertStringNotContainsString('jane@example.com', (string) json_encode($data));

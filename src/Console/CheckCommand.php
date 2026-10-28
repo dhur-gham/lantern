@@ -112,6 +112,9 @@ final class CheckCommand extends AgentCommand
             'truncated' => count($violations) > count($shown),
             'violations' => $shown,
         ];
+        if (! $pass) {
+            $payload['next'] = 'Fix the violations at their call_site, re-run the request, then run this check again.';
+        }
         if ($payload['truncated']) {
             $payload['hint'] = sprintf('%d of %d violations shown; raise --limit.', count($shown), count($violations));
         }

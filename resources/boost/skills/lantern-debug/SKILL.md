@@ -5,13 +5,15 @@ description: Debug slow Laravel requests and query problems (N+1, lazy loading, 
 
 # Lantern debugging workflow
 
-1. Enable: `LANTERN_ENABLED=true` locally. Never in production without sampling.
-2. Reproduce in-process (feature test or `php artisan lantern:replay /posts`). Seed >= 3 related rows.
-3. `php artisan lantern:issues --format=json --limit=5`. Pick one issue; note `evidence.example_trace_id` as BEFORE.
-4. `php artisan lantern:issue {id} --format=json`; open `location.file` at `location.line`.
+1. Enable: `LANTERN_ENABLED=true` and `LANTERN_STORAGE_DRIVER=database` locally (then migrate). Never in production without sampling.
+2. Reproduce with a feature test or a real request to the route. Seed >= 3 related rows.
+3. `php artisan lantern:issues --format=json --limit=5`. Pick one issue; note `related_trace_ids[0]` (or `evidence.trace_id` from `lantern:issue`) as BEFORE.
+4. `php artisan lantern:issue {id} --format=json`; open `call_site.file` at `call_site.line`.
 5. Fix using the pattern below. Prefer fixing the query over any config change.
-6. Re-run the reproduction, then `php artisan lantern:diff {before} {after}`: expect the issue in `resolved`, `new` empty, query delta negative.
-7. `php artisan lantern:check --route=/posts --no-new-issues --format=json`: exit 0 means done, 1 means still failing, 3 means nothing recorded (check the env flag).
+6. Re-run the reproduction, then `php artisan lantern:diff {before} {after}`: expect the issue in `resolved`, `new` empty, `queries.delta` negative.
+7. `php artisan lantern:check --route=/posts --no-new-issues`: exit 0 means done, 1 means still failing, 3 means nothing recorded (check the env flags).
+
+Always pass `--format=json` (the default table is large). Each result has `next`, the suggested follow-up command; `hint` explains empty or truncated results. With the `lantern` MCP server (`php artisan mcp:start lantern`) call `lantern_issues`, `lantern_issue`, `lantern_trace_summary`, `lantern_diff`, `lantern_check` instead; same JSON, same steps.
 
 Never silence an issue to pass the check. Gate on query count and issue presence, not milliseconds (timing is noisy).
 
@@ -53,7 +55,7 @@ Order::select('id', 'total')->where('status', 'paid')->chunkById(500, fn ($rows)
 
 ## missing_index
 
-`evidence.sql_shape` filters or sorts on an unindexed column. Add a migration, do not edit old ones.
+`lantern:issue` `evidence.sql_shape` filters or sorts on an unindexed column. Add a migration, do not edit old ones.
 
 ```php
 Schema::table('comments', function (Blueprint $t) {
@@ -80,4 +82,4 @@ Also drop unused `with()` relations and large `select *` columns (text/json).
 
 - A test with 1 row never triggers N+1: seed more.
 - Bindings are redacted; do not try to recover them.
-- If `suggest.confidence` is low, read the code before applying the hint.
+- `suggestion` is a hint, not a patch; read the code before applying it.

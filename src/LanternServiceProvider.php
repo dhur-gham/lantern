@@ -38,15 +38,18 @@ class LanternServiceProvider extends ServiceProvider
         }
 
         $this->app->scoped(Recorder::class);
-        // Head sampling: an unsampled execution records nothing. Skipped on long-lived workers, where one
-        // provider boot spans many requests and the decision would stick.
-        if (! isset($_SERVER['LARAVEL_OCTANE']) && ! $this->app->runningInConsole()
-            && ! (new Sampler((array) $this->app['config']->get('lantern', [])))->headDecision()) {
-            return;
+        // Head sampling: single-execution processes decide once here (an unsampled one records nothing and registers
+        // no hooks). Long-lived workers keep hooks registered and decide per execution at trace begin.
+        $sampler = new Sampler((array) $this->app['config']->get('lantern', []));
+        if (! isset($_SERVER['LARAVEL_OCTANE']) && ! $this->app->runningInConsole()) {
+            if (! $sampler->headDecision()) {
+                return;
+            }
+            $sampler->grantFirst();
         }
 
         $this->app->singleton(MemorySink::class, fn ($app) => new MemorySink((int) $app['config']->get('lantern.memory_sink_limit', 20)));
-        $this->app->singleton(Sampler::class, fn ($app) => new Sampler((array) $app['config']->get('lantern', [])));
+        $this->app->instance(Sampler::class, $sampler);
         $this->app->singleton(TraceStore::class, fn ($app) => new DatabaseTraceStore(
             $app['db'],
             $app['config']->get('lantern.storage.connection'),
@@ -110,6 +113,11 @@ class LanternServiceProvider extends ServiceProvider
         $this->loadMigrationsFrom(__DIR__.'/../database/migrations');
         $this->loadViewsFrom(__DIR__.'/../resources/views', 'lantern');
         $this->registerRoutes();
+
+        // Local MCP server for AI agents; a no-op unless laravel/mcp is installed.
+        if (class_exists(\Lantern\Mcp\Server::class)) {
+            \Lantern\Mcp\Server::register();
+        }
 
         if ($this->app->runningInConsole()) {
             $this->publishes([
