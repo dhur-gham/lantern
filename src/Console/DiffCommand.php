@@ -30,7 +30,13 @@ final class DiffCommand extends AgentCommand
         $new = array_values(array_diff_key($fb, $fa));
         $unchanged = array_values(array_intersect_key($fb, $fa));
 
+        // a plan-based finding on a query shape that also ran in BEFORE crossed a threshold, it is not new
+        $before = $this->missingIndexIds($a);
+        $threshold = array_values(array_filter($new, fn (array $f): bool => ($f['type'] ?? '') === 'missing_index' && isset($before[$f['id']])));
+        $new = array_values(array_filter($new, fn (array $f): bool => ! in_array($f, $threshold, true)));
+
         $queryMs = $this->delta((float) ($a['query_total_ms'] ?? 0), (float) ($b['query_total_ms'] ?? 0));
+        $durationMs = $this->delta((float) ($a['duration_ms'] ?? 0), (float) ($b['duration_ms'] ?? 0));
         $queries = $this->delta($this->queryCount($a), $this->queryCount($b));
         $score = $this->weight($new) - $this->weight($resolved);
         $verdict = match (true) {
@@ -47,14 +53,16 @@ final class DiffCommand extends AgentCommand
             'after' => $this->side($b),
             'dimensions' => [
                 'queries' => $this->direction($queries['delta']),
-                'query_ms' => $this->direction($queryMs['delta']),
+                'query_ms' => $this->direction($queryMs['delta'], (float) $queryMs['before']),
+                'duration_ms' => $this->direction($durationMs['delta'], (float) $durationMs['before']),
                 'findings' => ['resolved' => count($resolved), 'new' => count($new), 'verdict' => $this->direction($score)],
             ],
             'queries' => $queries,
             'query_ms' => $queryMs,
-            'duration_ms' => $this->delta((float) ($a['duration_ms'] ?? 0), (float) ($b['duration_ms'] ?? 0)),
+            'duration_ms' => $durationMs,
             'resolved' => $resolved,
             'new' => $new,
+            'threshold' => $threshold,
             'unchanged' => $unchanged,
         ]);
 
@@ -81,9 +89,42 @@ final class DiffCommand extends AgentCommand
         return array_sum(array_map(fn (array $f): int => 1 + Issue::severityRank((string) ($f['severity'] ?? '')) * 2, $findings));
     }
 
-    private function direction(int|float $delta): string
+    /** Milliseconds only count as better or worse beyond max(tolerance_pct of before, tolerance_ms). */
+    private function direction(int|float $delta, ?float $before = null): string
     {
+        if ($before !== null) {
+            $pct = (float) config('lantern.diff.tolerance_pct', 20);
+            $min = (float) config('lantern.diff.tolerance_ms', 5);
+            if (abs($delta) <= max($before * $pct / 100, $min)) {
+                return 'same';
+            }
+        }
+
         return $delta < 0 ? 'improved' : ($delta > 0 ? 'regressed' : 'same');
+    }
+
+    /**
+     * @param array<string, mixed> $trace
+     * @return array<string, true> missing_index keys for every query shape in the trace
+     */
+    private function missingIndexIds(array $trace): array
+    {
+        $ids = [];
+        $walk = function (?array $node) use (&$walk, &$ids): void {
+            if ($node === null) {
+                return;
+            }
+            $fp = $node['meta']['fingerprint'] ?? null;
+            if (($node['type'] ?? '') === 'query' && is_string($fp)) {
+                $ids[Issue::key(Issue::TYPE_MISSING_INDEX, $fp)] = true;
+            }
+            foreach ((array) ($node['children'] ?? []) as $child) {
+                $walk((array) $child);
+            }
+        };
+        $walk(is_array($trace['tree'] ?? null) ? $trace['tree'] : null);
+
+        return $ids;
     }
 
     /** @param array<string, mixed> $trace */

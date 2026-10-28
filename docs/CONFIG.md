@@ -20,7 +20,7 @@ Published to `config/lantern.php` by `php artisan lantern:install`. Source of tr
 | `detectors` | all six detector classes | none | Detector classes run on each finished trace (`NPlusOne`, `DuplicateQuery`, `SlowQuery`, `MemoryHog`, `MissingIndex`, `LazyLoad`). |
 | `explain` | `false` | `LANTERN_EXPLAIN` | Run EXPLAIN on slow queries to detect missing indexes. |
 | `explain_min_rows` | not set (`100`) | none | Optional, not in the published file. With `explain` on, scans estimated at this many rows or fewer are not reported as missing indexes. |
-| `capture_bindings` | `null` (on in dev mode, off otherwise) | `LANTERN_CAPTURE_BINDINGS` | Record bound values on query spans. Bindings named password/token/secret are always redacted. |
+| `capture_bindings` | `null` (on only when `APP_ENV=local` in dev mode, off otherwise) | `LANTERN_CAPTURE_BINDINGS` | Record bound values on query spans. Bindings named password/token/secret, and values that look like emails, JWTs or API tokens, are always redacted. |
 | `binding_max_length` | `200` | none | Longer string bindings are truncated. |
 | `capture_normalized_sql` | `true` | none | Store the normalized SQL on query spans. |
 | `backtrace_limit` | `50` | none | Frames inspected to resolve a call site. |
@@ -37,6 +37,7 @@ Published to `config/lantern.php` by `php artisan lantern:install`. Source of tr
 | `trace_commands` | `true` | `LANTERN_TRACE_COMMANDS` | Trace artisan commands. Loop wrappers (`queue:work`, `schedule:work`, `serve`, ...) are always skipped. An optional `ignore_commands` array (`Str::is` patterns) replaces the built-in skip list (`lantern:*`, `migrate*`, `db:*`, `make:*`, ...). |
 | `ignore_jobs` | `[]` | none | Job classes or patterns not traced. |
 | `keep_slow_ms` | `1000` | `LANTERN_KEEP_SLOW_MS` | Traces slower than this are always kept (tail sampling). |
+| `diff.tolerance_pct` / `diff.tolerance_ms` | `20` / `5` | `LANTERN_DIFF_TOLERANCE_PCT` / `LANTERN_DIFF_TOLERANCE_MS` | `lantern:diff` calls a time change better or worse only beyond max(pct of before, ms). |
 | `keep_rate` | unset: `1` when `APP_ENV=local`, else `0.1` | `LANTERN_KEEP_RATE` | Probability of keeping a clean trace. Slow, 5xx, failed and issue-bearing traces are always kept. |
 | `storage.driver` | `memory` | `LANTERN_STORAGE_DRIVER` | `memory` or `database`. The dashboard and agent CLI need `database`. |
 | `storage.connection` | `null` | `LANTERN_DB_CONNECTION` | Connection for Lantern tables (default connection when null). |

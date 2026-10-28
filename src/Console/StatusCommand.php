@@ -35,6 +35,9 @@ class StatusCommand extends Command
         if ($enabled && $keep < 1.0 && $this->laravel->isLocal()) {
             $this->warn('Keep rate is '.$keep.' locally: clean traces are dropped, so an "after" trace may be missing. Set LANTERN_KEEP_RATE=1.');
         }
+        if ($enabled && (float) config('lantern.thresholds.explain_min_ms', 0) > 0) {
+            $this->warn('thresholds.explain_min_ms is '.config('lantern.thresholds.explain_min_ms').': missing_index depends on query timing. Set LANTERN_EXPLAIN_MIN_MS=0 or re-publish the config (lantern:install --force).');
+        }
         if ($enabled && $this->laravel->environment('testing')) {
             $this->warn('Lantern is enabled under the testing environment; keep it off in phpunit.xml.');
         }

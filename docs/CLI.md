@@ -66,7 +66,7 @@ Compare two traces.
 
 Flags: `--format=json`, `--pretty`.
 
-Schema `lantern.diff`: `verdict` (issues weighted by severity, new minus resolved: above zero is `regressed`, below zero `improved`; on a tie the query count decides, else `same`), `dimensions` (`queries`, `query_ms`, `findings {resolved new verdict}`, each `improved|same|regressed`), `before` and `after` (`trace_id route path issue_count`), `queries`, `query_ms`, `duration_ms` (each `before after delta`), `resolved[]`, `new[]`, `unchanged[]` (issues). Exits 0 on success whatever the verdict.
+Schema `lantern.diff`: `verdict` (issues weighted by severity, new minus resolved: above zero is `regressed`, below zero `improved`; on a tie the query count decides, else `same`), `dimensions` (`queries`, `query_ms`, `findings {resolved new verdict}`, each `improved|same|regressed`), `before` and `after` (`trace_id route path issue_count`), `queries`, `query_ms`, `duration_ms` (each `before after delta`), `resolved[]`, `new[]`, `threshold[]` (missing_index on a query shape that ran in both traces: not new), `unchanged[]` (issues). Time dimensions (`query_ms`, `duration_ms`) read `same` within max(`diff.tolerance_pct` of before, `diff.tolerance_ms`), default 20% and 5 ms. Exits 0 on success whatever the verdict.
 
 ```
 php artisan lantern:diff <before-id> last --format=json

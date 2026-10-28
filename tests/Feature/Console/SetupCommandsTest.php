@@ -31,6 +31,10 @@ final class SetupCommandsTest extends TestCase
         $this->assertStringContainsString('Storage driver is "memory"', $out);
         $this->assertStringContainsString('Keep rate is 0.1 locally', $out);
 
+        config(['lantern.thresholds.explain_min_ms' => 2]);
+        Artisan::call('lantern:status');
+        $this->assertStringContainsString('explain_min_ms is 2', Artisan::output());
+
         $this->app['env'] = 'testing';
         Artisan::call('lantern:status');
         $this->assertStringContainsString('enabled under the testing environment', Artisan::output());
@@ -64,6 +68,29 @@ final class SetupCommandsTest extends TestCase
             $this->assertStringContainsString("LANTERN_KEEP_RATE=1\n", $env);
         } finally {
             $had === null ? @unlink($path) : file_put_contents($path, $had);
+        }
+    }
+
+    public function test_install_local_twice_reports_nothing_changed(): void
+    {
+        $path = base_path('.env');
+        $had = is_file($path) ? file_get_contents($path) : null;
+        file_put_contents($path, "APP_NAME=x
+");
+
+        try {
+            Artisan::call('lantern:install', ['--local' => true]);
+            $this->assertStringNotContainsString('enable it', Artisan::output());
+            $first = (string) file_get_contents($path);
+
+            Artisan::call('lantern:install', ['--local' => true]);
+            $this->assertStringContainsString('already has', Artisan::output());
+            $this->assertSame($first, (string) file_get_contents($path));
+        } finally {
+            $had === null ? @unlink($path) : file_put_contents($path, $had);
+            foreach (glob(database_path('migrations').'/*_create_lantern_*') ?: [] as $f) {
+                @unlink($f);
+            }
         }
     }
 }

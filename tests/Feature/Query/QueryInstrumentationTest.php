@@ -13,6 +13,7 @@ final class QueryInstrumentationTest extends QueryTestCase
 {
     public function test_successful_query_span_with_meta_and_call_site(): void
     {
+        config(['lantern.capture_bindings' => true]);
         $this->seedTables();
         $this->recorder()->begin();
 
@@ -55,7 +56,7 @@ final class QueryInstrumentationTest extends QueryTestCase
     public function test_bindings_redacted_and_truncated(): void
     {
         $this->seedTables();
-        config(['lantern.binding_max_length' => 10]);
+        config(['lantern.capture_bindings' => true, 'lantern.binding_max_length' => 10]);
         $this->recorder()->begin();
 
         DB::select('select * from q_authors where name = :name and :password = :password', [
@@ -170,5 +171,23 @@ final class QueryInstrumentationTest extends QueryTestCase
             $this->assertStringEndsWith('QueryTestCase.php', $span->callSite['file']);
             $this->assertSame(QueryProbeController::$lazyLine, $span->callSite['line']);
         }
+    }
+
+    public function test_bindings_default_off_outside_local_and_redact_sensitive_values(): void
+    {
+        $this->seedTables();
+        config(['lantern.capture_bindings' => null]);
+        $this->app['env'] = 'production';
+        $this->recorder()->begin();
+        DB::select('select * from q_authors where id = ?', [1]);
+        $q = array_values(array_filter($this->recorder()->trace()->spans(), fn ($s) => $s->type === SpanType::Query))[0];
+        $this->assertArrayNotHasKey('bindings', $q->meta);
+
+        config(['lantern.capture_bindings' => true]);
+        $this->recorder()->reset();
+        $this->recorder()->begin();
+        DB::select('select * from q_authors where name = ? and id = ?', ['jane@example.com', 1]);
+        $q = array_values(array_filter($this->recorder()->trace()->spans(), fn ($s) => $s->type === SpanType::Query))[0];
+        $this->assertSame(['[redacted]', 1], array_values($q->meta['bindings']));
     }
 }

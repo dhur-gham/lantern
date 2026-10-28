@@ -19,7 +19,7 @@ use Lantern\Trace\Trace;
  */
 final class MissingIndexDetector implements Detector
 {
-    private const MAX_FINGERPRINTS = 5;
+    private const MAX_FINGERPRINTS = 25;
 
     /** @param array<string, mixed> $config full config('lantern') */
     public function __construct(private readonly array $config, private readonly ?ExplainRunner $runner = null)
@@ -54,7 +54,6 @@ final class MissingIndexDetector implements Detector
                 $candidates[$fp] = [$max, $spans];
             }
         }
-        uasort($candidates, fn (array $a, array $b) => $b[0] <=> $a[0]);
         $candidates = array_map(fn (array $c) => $c[1], $candidates);
 
         $runner = $this->runner ?? new ExplainRunner;

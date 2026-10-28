@@ -47,6 +47,16 @@ final class LivewireInstrumentation
                 });
             });
 
+            Livewire::listen('update', static function (...$args) use ($app): void {
+                self::guard(static function () use ($app, $args): void {
+                    $recorder = self::recorder($app);
+                    $trace = $recorder?->isActive() ? $recorder->trace() : null;
+                    if ($trace !== null && ($args[0] ?? null) instanceof \Livewire\Component && is_string($args[1] ?? null) && self::isUpdate()) {
+                        $trace->meta['route'] = 'livewire:'.$args[0]::class.' updated '.$args[1];
+                    }
+                });
+            });
+
             Livewire::listen('mount', static fn (...$args) => self::phaseWithFinish($app, 'mount', $args[0] ?? null, null));
             Livewire::listen('render', static fn (...$args) => self::phaseWithFinish($app, 'render', $args[0] ?? null, null));
             Livewire::listen('call', static fn (...$args) => self::phaseWithFinish($app, 'call', $args[0] ?? null, is_string($args[1] ?? null) ? $args[1] : null));
@@ -136,6 +146,13 @@ final class LivewireInstrumentation
         $named = str_starts_with($current, 'livewire:');
         if ($method === null ? $named : str_contains($current, '@')) {
             return;
+        }
+
+        if ($method === '$commit') {
+            return;
+        }
+        if ($method !== null && str_starts_with($method, '$set')) {
+            $method = null;
         }
 
         $trace->meta['route'] = 'livewire:'.$class.($method !== null ? '@'.$method : '');

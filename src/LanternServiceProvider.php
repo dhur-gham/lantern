@@ -124,7 +124,7 @@ class LanternServiceProvider extends ServiceProvider
                 __DIR__.'/../config/lantern.php' => config_path('lantern.php'),
             ], 'lantern-config');
 
-            $this->publishes([
+            $this->publishesMigrations([
                 __DIR__.'/../database/migrations' => database_path('migrations'),
             ], 'lantern-migrations');
 
