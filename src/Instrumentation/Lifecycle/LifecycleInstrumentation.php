@@ -161,6 +161,11 @@ final class LifecycleInstrumentation
             $root->name = $event->request->method().' '.$uri;
         }
 
+        $trace = $recorder->trace();
+        if ($trace !== null) {
+            $trace->meta['route'] = $route->getName() ?: $uri;
+        }
+
         $this->routeSpan = $recorder->start(SpanType::Route, $uri, [
             'name' => $route->getName(),
             'uri' => $route->uri(),

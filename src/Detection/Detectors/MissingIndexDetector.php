@@ -33,7 +33,7 @@ final class MissingIndexDetector implements Detector
         }
 
         $slowMs = (float) ($this->config['thresholds']['slow_query_ms'] ?? 100);
-        $explainMs = (float) ($this->config['thresholds']['explain_min_ms'] ?? 2);
+        $explainMs = (float) ($this->config['thresholds']['explain_min_ms'] ?? 0);
         $filter = new QueryFilter($this->config);
         $minRows = (int) ($this->config['explain_min_rows'] ?? 100);
 

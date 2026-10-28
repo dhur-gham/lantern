@@ -63,7 +63,7 @@ Everything uses public framework extension points: events, the container's `exte
 ## Sampling
 
 - **Head sampling** (`sampling_rate`) is decided once per execution, before recording. In a normal web request or a single-run process, an unsampled execution registers no hooks at all. In long-lived workers (Octane, queue workers) the hooks stay registered and the decision is made at the start of each trace.
-- **Tail sampling** runs when a trace finishes: it is always kept if it has issues, took at least `keep_slow_ms` (1000), returned a 5xx status or failed. Any other trace is kept with probability `keep_rate` (0.1).
+- **Tail sampling** runs when a trace finishes: it is always kept if it has issues, took at least `keep_slow_ms` (1000), returned a 5xx status or failed. Any other trace is kept with probability `keep_rate` (1 when `APP_ENV=local`, else 0.1).
 
 With the defaults (`sampling_rate` 1.0) every request is observed and only uninteresting fast, clean traces are mostly dropped before they reach storage.
 

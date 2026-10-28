@@ -72,6 +72,7 @@ final class LivewireInstrumentation
             $name = $component instanceof \Livewire\Component ? class_basename($component).' '.($method !== null ? 'call '.$method : $phase) : $phase;
             $span = $recorder->start(SpanType::Livewire, $name, $meta);
             self::touch($recorder, $meta['component'] ?? null);
+            self::label($recorder, $meta['component'] ?? null, $method);
 
             return static function (...$ret) use ($recorder, $span): void {
                 try {
@@ -97,6 +98,7 @@ final class LivewireInstrumentation
             $name = $component instanceof \Livewire\Component ? class_basename($component).' '.$phase : $phase;
             $recorder->recordClosed(SpanType::Livewire, $name, $now, $now, $meta);
             self::touch($recorder, $meta['component'] ?? null);
+            self::label($recorder, $meta['component'] ?? null, null);
         });
     }
 
@@ -121,6 +123,22 @@ final class LivewireInstrumentation
         } catch (Throwable) {
             return false;
         }
+    }
+
+    private static function label(Recorder $recorder, mixed $class, ?string $method): void
+    {
+        $trace = $recorder->trace();
+        if ($trace === null || ! is_string($class) || ! self::isUpdate()) {
+            return;
+        }
+
+        $current = (string) ($trace->meta['route'] ?? '');
+        $named = str_starts_with($current, 'livewire:');
+        if ($method === null ? $named : str_contains($current, '@')) {
+            return;
+        }
+
+        $trace->meta['route'] = 'livewire:'.$class.($method !== null ? '@'.$method : '');
     }
 
     private static function touch(Recorder $recorder, mixed $class): void

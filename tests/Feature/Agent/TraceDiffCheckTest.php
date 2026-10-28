@@ -95,12 +95,18 @@ final class TraceDiffCheckTest extends AgentTestCase
         [$code, $data] = $this->jsonOut('lantern:diff', ['before' => 'before', 'after' => 'after']);
 
         $this->assertSame(0, $code);
-        $this->assertSame(['schema_version', 'schema', 'verdict', 'before', 'after', 'queries', 'query_ms', 'duration_ms', 'resolved', 'new', 'unchanged'], array_keys($data));
+        $this->assertSame(['schema_version', 'schema', 'verdict', 'before', 'after', 'dimensions', 'queries', 'query_ms', 'duration_ms', 'resolved', 'new', 'unchanged'], array_keys($data));
         $this->assertSame(['before' => 51, 'after' => 3, 'delta' => -48], $data['queries']);
         $this->assertSame(['before' => 100, 'after' => 20, 'delta' => -80], $data['duration_ms']);
         $this->assertSame(['k1'], array_column($data['resolved'], 'id'));
         $this->assertSame(['k3'], array_column($data['new'], 'id'));
         $this->assertSame(['k2'], array_column($data['unchanged'], 'id'));
+        $this->assertSame('improved', $data['verdict']);
+        $this->assertSame(['queries' => 'improved', 'query_ms' => 'improved', 'findings' => ['resolved' => 1, 'new' => 1, 'verdict' => 'same']], $data['dimensions']);
+
+        $this->seedTrace('worse', 3, ['k9'], 20, '2026-01-01 13:00:00');
+        $this->seedTrace('base', 3, [], 20, '2026-01-01 14:00:00');
+        [, $data] = $this->jsonOut('lantern:diff', ['before' => 'base', 'after' => 'worse']);
         $this->assertSame('regressed', $data['verdict']);
 
         [, $data] = $this->jsonOut('lantern:diff', ['before' => 'after', 'after' => 'after']);

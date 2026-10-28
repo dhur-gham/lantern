@@ -7,6 +7,7 @@ namespace Lantern\Console;
 use Lantern\Agent\AgentCommand;
 use Lantern\Agent\Findings;
 use Lantern\Agent\Reader;
+use Lantern\Detection\Issue;
 
 final class DiffCommand extends AgentCommand
 {
@@ -29,10 +30,12 @@ final class DiffCommand extends AgentCommand
         $new = array_values(array_diff_key($fb, $fa));
         $unchanged = array_values(array_intersect_key($fb, $fa));
 
+        $queryMs = $this->delta((float) ($a['query_total_ms'] ?? 0), (float) ($b['query_total_ms'] ?? 0));
         $queries = $this->delta($this->queryCount($a), $this->queryCount($b));
+        $score = $this->weight($new) - $this->weight($resolved);
         $verdict = match (true) {
-            $new !== [] || $queries['delta'] > 0 => 'regressed',
-            $resolved !== [] || $queries['delta'] < 0 => 'improved',
+            $score > 0 || ($score === 0 && $queries['delta'] > 0) => 'regressed',
+            $score < 0 || ($score === 0 && $queries['delta'] < 0) => 'improved',
             default => 'same',
         };
 
@@ -42,8 +45,13 @@ final class DiffCommand extends AgentCommand
             'verdict' => $verdict,
             'before' => $this->side($a),
             'after' => $this->side($b),
+            'dimensions' => [
+                'queries' => $this->direction($queries['delta']),
+                'query_ms' => $this->direction($queryMs['delta']),
+                'findings' => ['resolved' => count($resolved), 'new' => count($new), 'verdict' => $this->direction($score)],
+            ],
             'queries' => $queries,
-            'query_ms' => $this->delta((float) ($a['query_total_ms'] ?? 0), (float) ($b['query_total_ms'] ?? 0)),
+            'query_ms' => $queryMs,
             'duration_ms' => $this->delta((float) ($a['duration_ms'] ?? 0), (float) ($b['duration_ms'] ?? 0)),
             'resolved' => $resolved,
             'new' => $new,
@@ -65,6 +73,17 @@ final class DiffCommand extends AgentCommand
         }
 
         return $out;
+    }
+
+    /** @param list<array<string, mixed>> $findings severity-weighted, a critical outweighs a warning */
+    private function weight(array $findings): int
+    {
+        return array_sum(array_map(fn (array $f): int => 1 + Issue::severityRank((string) ($f['severity'] ?? '')) * 2, $findings));
+    }
+
+    private function direction(int|float $delta): string
+    {
+        return $delta < 0 ? 'improved' : ($delta > 0 ? 'regressed' : 'same');
     }
 
     /** @param array<string, mixed> $trace */

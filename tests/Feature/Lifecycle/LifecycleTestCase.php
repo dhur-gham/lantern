@@ -40,6 +40,7 @@ abstract class LifecycleTestCase extends TestCase
         $router->get('/invokable', InvokableController::class);
         $router->get('/validator', fn () => \Illuminate\Support\Facades\Validator::make(['a' => 1], ['a' => 'integer'])->validate());
         $router->get('/closure', fn () => 'closure');
+        $router->get('/named', fn () => 'named')->name('things.named');
         $router->get('/lantern/internal', fn () => 'ignored');
     }
 

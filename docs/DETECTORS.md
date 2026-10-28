@@ -142,7 +142,7 @@ Order::where('status', 'paid')->latest()->take(100)->get();
 
 **What it catches.** SELECT statements that the database plans as a full table scan on a filtered column.
 
-**How it is detected.** Off by default; set `explain` to `true`. When a trace finishes, Lantern takes the query shapes that took at least `thresholds.explain_min_ms` (never above `slow_query_ms`), picks the slowest five, and runs `EXPLAIN` on one sample of each against the same connection (`EXPLAIN QUERY PLAN` on SQLite). Only SELECT statements are explained. A shape is reported when the plan shows a full scan and the query has a WHERE predicate other than a primary-key lookup. Where the database estimates rows (MySQL, MariaDB, PostgreSQL), scans of 100 rows or fewer are ignored; SQLite has no estimate, so any scan with a column predicate counts. The suggested index lists the columns found in the WHERE clause.
+**How it is detected.** Off by default; set `explain` to `true`. When a trace finishes, Lantern takes the query shapes that took at least `thresholds.explain_min_ms` (default 0, so every SELECT shape qualifies and the result does not depend on one run's timing; never above `slow_query_ms`), picks the slowest five, and runs `EXPLAIN` on one sample of each against the same connection (`EXPLAIN QUERY PLAN` on SQLite). Only SELECT statements are explained. A shape is reported when the plan shows a full scan and the query has a WHERE predicate other than a primary-key lookup. Where the database estimates rows (MySQL, MariaDB, PostgreSQL), scans of 100 rows or fewer are ignored; SQLite has no estimate, so any scan with a column predicate counts. The suggested index lists the columns found in the WHERE clause.
 
 **Severity.** Always `warning`.
 

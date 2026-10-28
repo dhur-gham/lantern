@@ -13,7 +13,7 @@ Published to `config/lantern.php` by `php artisan lantern:install`. Source of tr
 | `thresholds.duplicate_min_repeats` | `2` | `LANTERN_DUPLICATE_MIN_REPEATS` | Identical SQL and bindings repeats before a duplicate issue. |
 | `thresholds.slow_query_ms` | `100` | `LANTERN_SLOW_QUERY_MS` | Slow query threshold. |
 | `thresholds.memory_delta_mb` | `32` | `LANTERN_MEMORY_DELTA_MB` | Per-span memory growth that flags a memory hog. |
-| `thresholds.explain_min_ms` | `2` | `LANTERN_EXPLAIN_MIN_MS` | Queries slower than this are EXPLAIN candidates (when `explain` is on). |
+| `thresholds.explain_min_ms` | `0` | `LANTERN_EXPLAIN_MIN_MS` | Query shapes slower than this are EXPLAIN candidates (when `explain` is on). The default `0` decides by plan, not by one run's timing, so a finding does not come and go between runs. |
 | `thresholds.max_issues_per_trace` | `50` | none | Cap on issues per trace. |
 | `ignore_tables` | sessions, cache, cache_locks, jobs, job_batches, failed_jobs, migrations, password_reset_tokens | none | Queries whose primary table is listed are skipped by query detectors. |
 | `ignore_sql_patterns` | `[]` | none | Substring, or regex when starting with `/`; matching SQL is skipped. |
@@ -37,7 +37,7 @@ Published to `config/lantern.php` by `php artisan lantern:install`. Source of tr
 | `trace_commands` | `true` | `LANTERN_TRACE_COMMANDS` | Trace artisan commands. Loop wrappers (`queue:work`, `schedule:work`, `serve`, ...) are always skipped. An optional `ignore_commands` array (`Str::is` patterns) replaces the built-in skip list (`lantern:*`, `migrate*`, `db:*`, `make:*`, ...). |
 | `ignore_jobs` | `[]` | none | Job classes or patterns not traced. |
 | `keep_slow_ms` | `1000` | `LANTERN_KEEP_SLOW_MS` | Traces slower than this are always kept (tail sampling). |
-| `keep_rate` | `0.1` | `LANTERN_KEEP_RATE` | Probability of keeping a clean trace. Slow, 5xx, failed and issue-bearing traces are always kept. |
+| `keep_rate` | unset: `1` when `APP_ENV=local`, else `0.1` | `LANTERN_KEEP_RATE` | Probability of keeping a clean trace. Slow, 5xx, failed and issue-bearing traces are always kept. |
 | `storage.driver` | `memory` | `LANTERN_STORAGE_DRIVER` | `memory` or `database`. The dashboard and agent CLI need `database`. |
 | `storage.connection` | `null` | `LANTERN_DB_CONNECTION` | Connection for Lantern tables (default connection when null). |
 | `storage.compress` | `true` | `LANTERN_STORAGE_COMPRESS` | Gzip stored trace payloads. |

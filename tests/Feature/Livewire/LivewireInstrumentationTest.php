@@ -84,4 +84,20 @@ final class LivewireInstrumentationTest extends TestCase
         $this->assertNotEmpty($queries);
         $this->assertContains(ProbeComponent::class, $trace->meta['livewire']);
     }
+
+    public function test_update_request_route_names_component_and_method(): void
+    {
+        $recorder = $this->app->make(Recorder::class);
+        $recorder->begin(['kind' => 'request']);
+
+        Livewire::test(ProbeComponent::class)->call('inc');
+
+        $trace = $recorder->trace();
+        $call = array_values(array_filter($trace->spans(), fn ($s) => $s->type === SpanType::Livewire && $s->meta['phase'] === 'call'))[0];
+        if (! $call->meta['update_request']) {
+            $this->markTestSkipped('Livewire::test does not flag an update request here');
+        }
+
+        $this->assertSame('livewire:'.ProbeComponent::class.'@inc', $trace->meta['route']);
+    }
 }
