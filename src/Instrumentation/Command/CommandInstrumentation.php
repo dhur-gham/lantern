@@ -32,6 +32,7 @@ final class CommandInstrumentation
     public const DEFAULT_IGNORE = [
         'lantern:*', 'migrate*', 'db:*', 'make:*', 'package:discover', 'vendor:publish', 'config:*', 'route:*', 'view:*',
         'event:*', 'optimize*', 'list', 'help', 'completion', '_complete', 'about', 'env', 'key:generate', 'storage:link',
+        'tinker', 'test', 'cache:*',
     ];
 
     /** @var list<array{name: string, span: Span, own: bool}> */

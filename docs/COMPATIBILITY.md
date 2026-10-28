@@ -9,7 +9,7 @@
 | Laravel | 11.x, 12.x | Tested on both |
 | PHP | 8.2 to 8.4 | 8.3 and 8.4 tested. 8.2 is declared in `composer.json` and the code uses no 8.3+ syntax, but the suite was not run on it |
 | Livewire | 3.x, 4.x | Tested on both |
-| Filament | 4.x, 5.x | 4.x tested. 5.x reviewed only: Lantern relies on the same Filament event and Livewire hooks |
+| Filament | 4.x, 5.x | 4.x tested in the package suite. 5.x (5.11 with Livewire 4) exercised end to end in a separate seeded application: panel, resource and column attribution, Livewire update requests. Not part of the package's own matrix run |
 | Laravel Octane | Supported | Reviewed: per-request state is reset on Octane request, task and tick events. Not run under a live Octane server |
 | Queues | Any queue driver | Job events are framework-level, so the driver does not matter. Tested with the sync and database drivers |
 | Laravel MCP | Optional (`laravel/mcp` ^1.1) | Tested |

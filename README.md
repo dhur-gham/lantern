@@ -1,127 +1,219 @@
 # Lantern
 
-**See why your Laravel request is slow, down to the file and line.** Lantern traces every request, job and artisan command as a timeline, finds N+1 queries, duplicate and slow queries, missing indexes and memory hogs, and tells you where to fix them. Humans get a dashboard; AI coding agents get a JSON CLI and an MCP server.
+**Laravel performance diagnostics for developers and AI coding agents.**
+
+Lantern finds performance problems in your Laravel app, traces them to the code responsible, shows you the evidence, and lets you verify whether a fix worked.
+
+**Compatibility:** see the [tested compatibility matrix](docs/COMPATIBILITY.md) for the exact Laravel, PHP, Livewire, Filament and database versions that were run and which were only reviewed.
+
+### What problem does it solve?
+
+N+1 queries, repeated queries and memory-hungry loops are invisible while you develop. Ten rows run fast. Ten thousand rows in production turn one innocent `foreach` into hundreds of queries and a slow page. A query log tells you *what* ran; it does not tell you *which line of your code* caused it, whether it is a pattern or a one-off, or whether your fix actually helped.
+
+### Why use it alongside your current tools?
+
+Because it connects the whole loop in one place: **detect an issue, inspect it down to the source line, fix the code, compare before and after, and gate the result with a check.** The same evidence is available as a dashboard for you and as structured JSON (CLI and MCP) for an AI coding agent.
+
+### See a real result
+
+```bash
+composer require dhur-gham/lantern
+php artisan lantern:install && php artisan migrate
+# .env:  LANTERN_ENABLED=true   LANTERN_STORAGE_DRIVER=database
+```
+
+Load a page that lists records, then:
+
+```bash
+php artisan lantern:issues --format=json
+```
+
+The top finding (trimmed):
+
+```json
+{"type":"n_plus_one","severity":"critical",
+ "title":"N+1: Post::tags lazy-loaded x50 at app/Http/Resources/PostResource.php:16", ...}
+```
+
+Fix it, reload the page, and compare:
+
+```
+$ php artisan lantern:diff <before> last
+{"verdict":"improved","queries":{"before":152,"after":4,"delta":-148},
+ "query_ms":{"before":213.16,"after":10.42,"delta":-202.74},"resolved":[3 n_plus_one issues],"new":[]}
+```
+
+*(Real output from a seeded Laravel 12 application, 50 posts per page. Details [below](#a-real-before-and-after).)*
 
 ---
 
 ## The problem
 
-N+1 queries, slow queries and memory growth are invisible while you develop. Ten rows in your local database run fast. Ten thousand rows in production turn one innocent `foreach` into 1,500 queries, a 2-second response and an out-of-memory worker.
+Query logs and request profilers show you what happened. Fixing a performance problem needs more than that:
 
-Existing tools show you a list of queries. They rarely show you the story: which middleware, controller, Blade line or Livewire action issued them, which ones are the same query repeated, and what to change.
+- **Context.** Which controller, Blade line, Livewire action or Filament column issued this query?
+- **Pattern.** Is it the same query shape repeated 50 times, or 50 different queries?
+- **Priority.** Which problem across all your requests costs the most?
+- **Proof.** After you changed the code, did the behaviour actually improve, and will it stay that way?
 
-## What Lantern does
+Lantern is built around those four questions.
 
-Lantern records each execution as a tree of timed spans, resolves the application `file:line` behind every query, and runs detectors over the finished trace.
+## Why Lantern is different
 
-A request, as a trace (illustrative):
+Lantern does not claim to be the only tool that can spot an N+1 query. What it provides is the complete workflow around it, in one package.
+
+| | The win |
+|---|---|
+| **Find the code behind the query problem** | Queries are resolved to the application `file:line` that issued them where source attribution succeeds, including Blade templates, and tied to their execution context (request, middleware, controller, Livewire component, Filament resource and column, job, command). Less time guessing which part of the app causes the database work. |
+| **Turn raw queries into actionable issues** | Six detectors group queries into issues: N+1, lazy loading, duplicate queries, slow queries, possible missing indexes and memory-heavy execution. You start from a suspected problem with its evidence and a suggested direction, not from a long query log. |
+| **Verify the fix instead of assuming it worked** | `lantern:diff` compares two traces (queries, query time, issues resolved, issues introduced). `lantern:issue` shows the evidence behind a finding. |
+| **Make performance debugging usable by AI coding agents** | Stable issue IDs, versioned JSON output, trace summaries, diffs, checks with exit codes, an MCP server and a Laravel Boost guideline and skill. An agent can inspect evidence, change code, and check the result without guessing. Lantern does not rewrite your code; the agent or you does. |
+| **Add performance checks to your workflow** | `lantern:check` exits `0` (ok), `1` (findings over threshold), `2` (usage or config error) or `3` (no data), so it can run in scripts and CI. Supported gates are listed [below](#ci-and-scripts). |
+
+### The Lantern workflow
+
+1. **Detect** a potential performance issue.
+2. **Inspect** the issue, its trace and the source location.
+3. **Fix** the underlying code.
+4. **Compare** the result against the previous behaviour.
+5. **Check** the evidence to help catch the problem if it returns.
+
+The goal: spend less time searching through logs and more time fixing the code responsible.
+
+## A real before and after
+
+Setup: a seeded Laravel 12 application (20,000 posts, 200,000 comments, MySQL 8.4), an API endpoint that returns 50 posts through a JSON resource. Lantern recorded the request with the database storage driver.
+
+**1. Detect.** `lantern:issues --format=json` lists three critical issues from one request, each with its call site (titles shortened here, one line each):
 
 ```
-GET /posts                                          312 ms   38.1 MB
-├─ middleware: Authenticate                           1 ms
-├─ controller: PostController@index                  14 ms
-│   └─ query  select * from posts limit 50            2 ms   app/Http/Controllers/PostController.php:18
-├─ view: posts.index                                294 ms
-│   └─ query  select * from users where id = ?  x50  96 ms   resources/views/posts/index.blade.php:7
-└─ response                                           3 ms
+critical  n_plus_one  N+1: Post::author lazy-loaded x50   app/Http/Resources/PostResource.php:14
+critical  n_plus_one  N+1: comment count query x50        app/Http/Resources/PostResource.php:15
+critical  n_plus_one  N+1: Post::tags lazy-loaded x50     app/Http/Resources/PostResource.php:16
 ```
 
-and what it reports about it (illustrative):
+**2. Inspect.** `lantern:issue <id> --format=json` returns the evidence (trimmed):
+
+```json
+{"issue":{"type":"n_plus_one","severity":"critical",
+  "title":"N+1: Post::tags lazy-loaded x50 at app/Http/Resources/PostResource.php:16",
+  "call_site":{"file":"app/Http/Resources/PostResource.php","line":16},
+  "evidence":{"trace_id":"db034b8d-...","sql_shape":"select `tags`.*, ... where `post_tag`.`post_id` = ?","avg_ms":1.35}},
+ "next":"Fix call_site, re-run the request, then: php artisan lantern:diff db034b8d-... last"}
+```
+
+**3. Fix.** The resource read `$this->author`, `$this->comments()->count()` and `$this->tags` once per post. The controller now loads them up front:
+
+```php
+// before
+Post::query()->paginate(50);
+
+// after
+Post::query()->with(['author', 'tags'])->withCount('comments')->paginate(50);
+```
+
+**4. Compare.** Request the endpoint again, then `lantern:diff <before> last`:
+
+```json
+{"verdict":"improved",
+ "before":{"path":"/api/posts/n-plus-one","issue_count":3},
+ "after":{"path":"/api/posts/fixed","issue_count":0},
+ "queries":{"before":152,"after":4,"delta":-148},
+ "query_ms":{"before":213.16,"after":10.42,"delta":-202.74},
+ "resolved":[3 n_plus_one issues],"new":[]}
+```
+
+**5. Check.**
 
 ```
-[critical] n_plus_one   N+1: Post::author lazy-loaded x50
-           at resources/views/posts/index.blade.php:7        total 96 ms
-           shape: select * from users where id = ?
-           fix:   eager load the relation, e.g. Post::with('author')->get()
+$ php artisan lantern:check --route=/api/posts/fixed --no-new-issues      # exit 0
+$ php artisan lantern:check --route=/api/posts/n-plus-one --no-new-issues # exit 1, lists the 3 violations
 ```
 
-Fix it, hit the page again, and Lantern proves it:
-
-```
-$ php artisan lantern:diff <before> last
-verdict: improved   queries: 152 -> 4 (-148)   query time: 213 ms -> 10 ms
-```
+Query counts here went from 152 to 4. Timings are from one machine and one run; use counts and issue presence, not milliseconds, as your regression signal.
 
 ## What you can do with it
 
-- **Hunt N+1s while you build.** Click through your app locally, open `/lantern/issues`, and see every repeated query ranked by total cost with its `file:line` and the fix.
-- **Audit an admin panel.** Filament tables and Livewire actions are attributed to the resource, component and column, so hidden per-row queries in `getStateUsing` closures and accessors show up.
-- **Gate CI on query health.** `lantern:check --max-queries=40 --no-new-issues` fails a build when a change adds queries or a new N+1, using query counts, not flaky timings.
-- **Watch production safely.** Sample a small share of traffic; slow, failing and issue-bearing requests are always kept, and issues are ranked across requests so the costliest rise to the top.
-- **Find the slow job.** Queue jobs and artisan commands get their own traces, with the queries and memory they used.
-- **Let an AI agent do the fixing.** It reads findings as JSON, opens the exact line, applies the fix, and proves it with `lantern:diff`. No guessing, no screenshots.
+- **Hunt N+1s while you build.** Click through your app locally, open the dashboard's issues page, and see repeated queries ranked by total cost with their `file:line`.
+- **Audit an admin panel.** Filament tables and Livewire actions are attributed to the resource, component and column, so per-row queries inside `getStateUsing` closures and accessors show up.
+- **Gate CI on query health.** Fail a build when a change adds queries or a new N+1.
+- **Watch a sample of production traffic.** Slow, failing and issue-bearing requests are always kept; issues are ranked across requests.
+- **Find the slow job.** Queue jobs and artisan commands get their own traces.
+- **Let an AI agent investigate and verify.** It reads findings as JSON, opens the line, proposes a change, and checks the result with `lantern:diff`.
 
 ## Features
 
-**Full request timeline**
-- Spans for request, bootstrap, middleware, route, controller, validation, queries, views, Livewire, cache, HTTP client, events, jobs and commands, each with time and memory.
-- Works with plain controllers, route closures, Blade, Livewire 3 and 4, and Filament.
+### What Lantern records
 
-**Queries with exact call sites**
-- The application `file:line` that issued each query, including lines inside Blade templates (compiled views are mapped back to the source view).
-- Queries are fingerprinted (literals and IN lists collapsed), so the same shape is grouped even when the values differ.
-- Optional bound values, redacted by default outside dev mode.
+**Tracing.** Lantern can trace requests, queue jobs and Artisan commands, subject to your configuration and sampling. Each traced execution is a tree of timed spans with memory: bootstrap, middleware, route, controller, validation, queries, views, Livewire phases, jobs and commands. It handles controllers, route closures, Blade, Livewire 3 and 4 and Filament.
 
-**Detectors**
-| Issue type | What it catches |
-|---|---|
-| `n_plus_one` | Same query shape repeated at one call site (default 5 or more), merged with Eloquent lazy-load violations |
-| `lazy_load` | Lazily loaded relations, with model and relation names. Recorded without throwing in your app; if you set your own `preventLazyLoading` handler, it is still called |
-| `duplicate_query` | Identical SQL and bindings repeated in one trace |
-| `slow_query` | Queries over `slow_query_ms` (default 100) |
-| `missing_index` | Opt-in `EXPLAIN` on slow queries (`LANTERN_EXPLAIN=true`) |
-| `memory_hog` | Spans whose memory growth exceeds `memory_delta_mb` (default 32) |
+**Call sites.** Lantern resolves queries to application source locations where source attribution succeeds. Queries issued only by framework code can have no application line (they inherit the nearest traced span's location, or have none). Blade call sites are mapped back from the compiled template to the source view; the line can be approximate in complex templates. Queries are fingerprinted (literals, bindings and `IN` list length removed), so the same shape is grouped even when values differ.
 
-**Livewire and Filament attribution**
-- Livewire update requests are attributed to component, method and phase; Filament pages, resources and columns are labelled, so "the N+1 is in `PostResource`, column `tags`" is one glance.
+**Livewire and Filament.** Update requests are attributed to component, method and phase; Filament pages, resources and columns are labelled in the trace and on issues.
 
-**Jobs and artisan commands**
-- Queue jobs and artisan commands are traced as their own traces (`LANTERN_TRACE_JOBS`, `LANTERN_TRACE_COMMANDS`). Long-running wrappers such as `queue:work` and `schedule:work` are skipped.
+**Storage and retention.** In-memory (default, last 20 traces) or your database (`lantern_traces`, `lantern_issues`), optionally gzip-compressed. Head sampling (`sampling_rate`) decides per request, job or command whether to record at all. Tail sampling applies when writing to the database: slow (`keep_slow_ms`), 5xx, failed and issue-bearing traces are always kept, and clean ones are kept at `keep_rate` (default 10%). The in-memory driver keeps everything that was recorded, up to its last 20. `lantern:prune` deletes traces after `retention.days` (default 7) and issues after `retention.issues_days` (default 30); it is not scheduled for you, so add it to your scheduler.
 
-**Dashboard**
-- Trace list, a waterfall per trace, and an issues page ranked by total cost across requests. See below.
+### What it detects
 
-**Sampling, retention, low overhead**
-- Head sampling plus tail sampling: slow, 5xx, failed and issue-bearing traces are always kept; clean ones are kept at `keep_rate` (default 10%).
-- Traces buffer in memory and are written at the end of the request. Retention is configurable and pruned with `lantern:prune`.
-- Off by default; a hard kill switch is available.
+| Detector | Catches | Evidence | Needs | Known limits |
+|---|---|---|---|---|
+| `n_plus_one` | Same query shape repeated from one call site (default 5 or more) | Call site, count, total and average ms, SQL shape, suggested fix | Nothing | `chunk()`, `lazy()` and `each()` paging are excluded on purpose; a deliberate repeated lookup in a loop is still reported |
+| `lazy_load` | A relation lazily loaded on many models in a loop | Model, relation, call site | Eloquent relations. Lantern installs its own recording hook after the app boots (automatic; it does not throw unless your app already enabled prevention). Your own `handleLazyLoadingViolationUsing` handler is chained and still runs; one registered after Lantern boots replaces Lantern's hook | Eloquent only reports models loaded in batches of two or more, so single-model lookups are not flagged; Laravel's automatic eager loading produces no violations |
+| `duplicate_query` | Identical SQL and bindings run more than once in a trace | Call sites, count | Bindings captured (`capture_bindings`, on by default in dev mode) | Without bindings it cannot tell duplicates from different parameters, so it skips them |
+| `slow_query` | Queries over the threshold (default 100 ms) | Time, count, max, call site | Nothing | Time is what the database connection reports |
+| `missing_index` | A SELECT that `EXPLAIN` plans as a full scan on a filtered column | Plan summary, suggested columns | `LANTERN_EXPLAIN=true`; MySQL, MariaDB, PostgreSQL or SQLite | Opt-in; SELECT only; the suggested index is a starting point and depends on your data |
+| `memory_hog` | A span that grows memory sharply (default 32 MB), or an unbounded SELECT followed by growth | Span, memory delta, call site | Nothing | The first request after a cold start can show autoload memory at very low thresholds |
 
-**Redaction**
-- Names containing `password`, `token` or `secret` are always redacted; long string bindings are truncated. The agent CLI shows bindings as masked or type placeholders unless you pass `--with-bindings`.
+Details, thresholds, severities and fixes for each are in [docs/DETECTORS.md](docs/DETECTORS.md).
+
+### What it helps you verify
+
+**Dashboard.** A trace list, a waterfall per trace, an issues page ranked by total cost across requests, and an issue detail page. See [Dashboard](#dashboard).
+
+**CLI and MCP.** `lantern:issues`, `issue`, `trace`, `diff` (before/after) and `check` (a gate with exit codes), plus `status`, `prune` and `install`. Five read-only MCP tools are available if you install the optional `laravel/mcp`. See [docs/CLI.md](docs/CLI.md).
+
+**Controls.** Sampling rate, tail sampling, ignored paths, tables, SQL patterns, jobs and commands, binding capture and redaction, thresholds, a kill switch. Everything is in [docs/CONFIG.md](docs/CONFIG.md).
 
 ## How it compares
 
-| | Lantern | Telescope | Debugbar | Clockwork | Pulse | Sentry / Nightwatch |
-|---|---|---|---|---|---|---|
-| Per-request timeline | Yes, nested spans | Flat entries grouped by batch | Yes (toolbar) | Yes (flat timeline) | No | Yes |
-| Query call site | `file:line`, incl. Blade lines | Caller frame | Backtrace | Backtrace, Blade view names | Slow queries only | Slow queries only (Sentry); Nightwatch yes |
-| Built-in N+1 detection | Yes | No | No (add-on package) | Lazy-load duplicates | No | N+1 detected server-side (Sentry); not in the Nightwatch agent |
-| Duplicate, slow, missing-index, memory detectors | Yes | Slow flag only | Memory per query, on-demand EXPLAIN | Slow queries | Slow queries | Partly, hosted |
-| Cross-request issue ranking | Yes | No | No | No | Aggregates only, no per-request detail | Yes, hosted |
-| Self-hosted | Yes | Yes | Yes | Yes | Yes | Sentry or Nightwatch is a hosted service |
-| Agent-friendly CLI and MCP | Yes | No | No | No | No | No |
+These tools approach performance from different angles. This table describes focus, not exclusive capabilities or gaps: each product does more than one line can say, so read its official documentation (linked in the first column) before choosing.
 
-Honest take: Telescope, Debugbar and Clockwork are excellent request inspectors and Pulse is a good production health dashboard; use them where they fit. Sentry and Nightwatch are production monitoring services with alerting and teams. Lantern is the one built around finding and verifying query and memory problems in code, locally or with sampling in production.
+| Tool | Primary strength | Lantern's intended distinction |
+|---|---|---|
+| [Laravel Telescope](https://laravel.com/docs/telescope) | Inspect requests, queries, jobs and other application activity | An explicit issue, trace, diff and check workflow around query and memory problems |
+| [Laravel Debugbar](https://github.com/barryvdh/laravel-debugbar) | Convenient request-level debugging and profiling | Structured issue analysis and CLI/agent-oriented verification |
+| [Clockwork](https://underground.works/clockwork) | Request profiling and timeline in the browser | Cross-request issue ranking and verification commands |
+| [Laravel Pulse](https://laravel.com/docs/pulse) | Application performance and usage metrics | Investigating individual code-level problems and checking changes |
+| [Sentry](https://docs.sentry.io/platforms/php/guides/laravel/) / [Nightwatch](https://nightwatch.laravel.com/docs) | Error monitoring, tracing and production observability as hosted services | Laravel-specific detectors and a workflow built around code fixes and verification, self-hosted in your database |
+
+They work together: use a profiler or monitor for what it is good at, and Lantern for the detect, inspect, fix, compare loop.
 
 ## Quick start
 
 ```bash
-# Not on Packagist yet: add the repository first
-composer config repositories.lantern vcs git@github.com:dhur-gham/lantern.git
-composer require dhur-gham/lantern        # add --dev if you only run it locally
+# 1. Install
+composer require dhur-gham/lantern          # add --dev if you only run it locally
 
-php artisan lantern:install               # publishes config/lantern.php and the migrations
+# 2. Publish config and migrations, create the tables
+php artisan lantern:install
 php artisan migrate
 ```
 
-Then in `.env`:
-
 ```dotenv
+# 3. Enable it (off by default)
 LANTERN_ENABLED=true
-LANTERN_STORAGE_DRIVER=database   # needed for the CLI, agents, and history; default is in-memory
+LANTERN_STORAGE_DRIVER=database    # needed for the dashboard, the CLI and issue history
 ```
 
-`lantern:install` only publishes files (`--force` overwrites) and does not enable Lantern. Requests you make now are traced. Open `/lantern`.
+4. **Reproduce an issue.** Open a page or endpoint that loops over records and touches relations.
+5. **Run your first diagnostic.**
+
+```bash
+php artisan lantern:status                  # is it on, which framework versions it detected
+php artisan lantern:issues --format=json    # ranked findings with call sites
+```
+
+or open `/lantern` in the browser.
 
 ## Dashboard
 
@@ -133,88 +225,169 @@ use Lantern\Lantern;
 Lantern::auth(fn ($request) => $request->user()?->isAdmin());
 ```
 
-Pages: traces, a trace waterfall, issues ranked by total cost, and a single-issue view. A JSON API sits under `/lantern/api/traces` and `/lantern/api/issues`.
+Pages: the trace list (filters for status, slow and issues), a waterfall per trace with each span's call site, SQL and memory, an issues page ranked by total cost, and a single-issue view with its recent traces. A JSON API sits under `/lantern/api/traces` and `/lantern/api/issues`.
 
 ## CLI
 
-All commands use `php artisan` and read stored traces (database driver).
+The analysis commands (`issues`, `issue`, `trace`, `diff`, `check`) read stored traces (database storage driver) and accept `--format=table|json|ndjson|markdown`; `status` and `prune` have no `--format`. `issues`, `issue` and `trace` default to a table, while `diff` and `check` print JSON by default. Agents should pass `--format=json`: the table is two to five times larger.
 
 ```bash
 php artisan lantern:issues --format=json --limit=5   # ranked findings
 php artisan lantern:issue <id> --format=json         # one finding with redacted evidence
-php artisan lantern:trace --last --summary           # totals, issues, slowest query groups
-php artisan lantern:trace --last --tree              # collapsed span tree (also --spans, --slow)
-php artisan lantern:diff <before> last               # resolved / new issues, query deltas
+php artisan lantern:trace --last --summary           # totals, issues, slowest query groups (views: --summary, --tree, --spans)
+php artisan lantern:trace --slow --summary           # the slowest of the 100 most recent traces (ignores --last)
+php artisan lantern:diff <before> last               # resolved and new issues, query deltas
 php artisan lantern:check --route=/posts             # pass/fail gate
 php artisan lantern:status                           # state and detected framework versions
 php artisan lantern:prune --dry-run                  # retention cleanup (--days, --issues-days)
 ```
 
-Real output from a run against a seeded app:
+Notes: `last` is the most recent trace of any kind, so a queue job or command that ran after your page load can be "last" (common helpers such as `migrate`, `tinker` and `lantern:*` are ignored by default; see `ignore_commands`). Without a view flag, `lantern:trace` prints a tree limited to depth 6 (`--depth` changes it).
 
-```
-$ php artisan lantern:issue 042bce --format=json
-{"issue":{"id":"042bce3e...","type":"n_plus_one","severity":"critical",
- "title":"N+1: Post::tags lazy-loaded x50 at app/Http/Resources/PostResource.php:16",
- "call_site":{"file":"app/Http/Resources/PostResource.php","line":16}, ...},
- "next":"Fix call_site, re-run the request, then: php artisan lantern:diff db034b8d-... last"}
+Full reference: [docs/CLI.md](docs/CLI.md).
 
-$ php artisan lantern:diff db034b8d-... last
-{"verdict":"improved","queries":{"before":152,"after":4,"delta":-148},
- "query_ms":{"before":213.16,"after":10.42,"delta":-202.74},"resolved":[...],"new":[]}
+### CI and scripts
+
+`lantern:check` exits `0` ok, `1` findings over threshold, `2` usage or config error, `3` no data. Supported gates:
+
+```bash
+php artisan lantern:check --route=/posts --max-queries=40 --no-new-issues
 ```
 
-Output formats are `table`, `json`, `ndjson` and `markdown` (`--pretty` for JSON).
+Flags: `--max-queries`, `--max-ms`, `--fail-on=critical|warning|info`, `--no-new-issues`, `--baseline=file.json`, `--write-baseline=file.json`, `--since=24h`, `--route`. Defaults live under `lantern.check` in the config. Scope matters: without `--route`, `--since` or a baseline, the check looks at every stored trace, so old findings keep failing it. `--no-new-issues` only means "nothing new" relative to a baseline (`--baseline=file.json`); without one, any issue counts as new. `--write-baseline=file.json` records the current findings as that baseline and exits `0` even if it lists violations. The check reads traces that already exist, so exercise the code first (feature tests, a smoke script, a staging run) with Lantern enabled and database storage. Use query counts and issue presence rather than milliseconds, which are noisy.
 
 ## Built for AI agents
 
-Every agent command emits stable JSON with `next` (the suggested follow-up) and `hint` (why a result is empty or truncated). A whole find, inspect, fix, diff, check loop costs under 2,500 tokens of tool output in measured runs.
+Every agent command emits versioned JSON with `next` (the suggested follow-up command) and `hint` (why a result is empty, truncated or failed). Issue IDs are fingerprints that do not change when line numbers shift, so an agent can refer to the same finding across edits.
 
-Exit codes of `lantern:check`: `0` ok, `1` findings over threshold, `2` usage or config error, `3` no data.
+**A real run.** A fresh agent given only the agents guide completed find, inspect, fix, diff and check against a seeded application; the tool output for the whole loop was under 2,500 tokens. Default sizes: `lantern:issues --format=json` for 7 issues is about 840 tokens, `lantern:issue` about 290, `lantern:diff` about 345, a passing `lantern:check` about 65.
 
-```bash
-php artisan lantern:issues --format=json --limit=5
-php artisan lantern:issue <id> --format=json                    # open call_site.file at call_site.line, fix it
-php artisan lantern:diff <before> last                          # expect the issue under "resolved"
-php artisan lantern:check --route=/posts --no-new-issues        # exit 0 = done
+```
+lantern:issues --format=json     -> pick the top finding, note call_site and next
+lantern:issue <id> --format=json -> read the evidence and the suggested direction
+(edit call_site.file at call_site.line, re-run the request)
+lantern:diff <before> last       -> verdict improved, issue under "resolved"
+lantern:check --route=<route> --no-new-issues    -> exit 0
 ```
 
-Useful gate flags: `--max-queries`, `--max-ms`, `--fail-on=critical|warning|info`, `--no-new-issues`, `--baseline=file.json`, `--write-baseline=file.json`, `--since=24h`. Defaults live under `lantern.check` in the config.
+**MCP server (optional).** MCP is not enabled by installing Lantern alone: it needs `laravel/mcp` (^1.1) in your app (`composer require --dev laravel/mcp`). Once that package is present, Lantern registers a local read-only server named `lantern` with `lantern_issues`, `lantern_issue`, `lantern_trace_summary`, `lantern_diff` and `lantern_check`. They return the same JSON as the CLI.
 
-**MCP server.** If `laravel/mcp` is installed, Lantern registers a local server named `lantern` (run `php artisan mcp:start lantern`) with the tools `lantern_issues`, `lantern_issue`, `lantern_trace_summary`, `lantern_diff` and `lantern_check`.
+```bash
+claude mcp add lantern -- php artisan mcp:start lantern
+```
 
-**Laravel Boost.** Lantern ships a Boost guideline and a `lantern-debug` skill; `php artisan boost:install` or `boost:update` picks them up. Details in [docs/AGENTS_GUIDE.md](docs/AGENTS_GUIDE.md).
+or in `.mcp.json`:
 
-## Production safety
+```json
+{"mcpServers":{"lantern":{"command":"php","args":["artisan","mcp:start","lantern"]}}}
+```
 
-- Disabled unless `LANTERN_ENABLED=true`; `LANTERN_KILL_SWITCH=true` stops all recording instantly.
-- `LANTERN_SAMPLING_RATE` and tail sampling bound cost; `LANTERN_MODE=profile` with `call_site_mode=lazy` resolves call sites only for repeated or slow queries.
-- Measured overhead (median, MySQL, 20k posts and 200k comments, memory sink): about +3% on an API route, +9% on an N+1 route, and about 0.5 ms on a sub-5 ms page. With database storage: +3 to +4% on the API route, higher on N+1 routes (about +16%). The under-5% target was not met on every route, so measure on yours.
-- Recording failures are isolated from the request; 1,000 mixed requests drifted memory by under 1 MB.
-- Gate the dashboard with `Lantern::auth()`; unauthorised users get 403.
-- Prune on a schedule: `$schedule->command('lantern:prune')->daily();`.
+**Laravel Boost.** Lantern ships a Boost guideline and a `lantern-debug` skill with fix patterns for each issue type. Setup and a copy-paste snippet for your own `AGENTS.md` are in [docs/AGENTS_GUIDE.md](docs/AGENTS_GUIDE.md).
 
-## Compatibility
+## Trust and limitations
 
-PHP 8.2+, Laravel 11 and 12, Livewire 3 and 4, Filament 4. Tested on SQLite, MySQL 8.4, MariaDB 10.11 and PostgreSQL 16. PHP 8.2 itself has not been run in the test matrix. See [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md).
+### Tested versions
+
+| Component | Status |
+|---|---|
+| Laravel 11, 12 | Tested on both |
+| PHP 8.3, 8.4 | Tested. 8.2 is declared; the code uses no 8.3+ syntax, but the suite was not run on it |
+| Livewire 3, 4 | Tested on both |
+| Filament 4 | Tested in the package suite |
+| Filament 5 | Exercised end to end in a separate seeded application; not part of the package's own matrix |
+| SQLite, MySQL 8.4, MariaDB 10.11, PostgreSQL 16 | Tested (migrations, storage, pruning, fingerprints, `EXPLAIN` parsing) |
+| Octane | Reviewed with simulated events; not run under a live Octane server |
+| Laravel MCP | Tested |
+
+The package's own suite is 558 tests plus a 261-test stress suite covering failures in every layer, odd data, config toggles and storage faults. Full matrix: [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md).
+
+### Measured overhead
+
+Median request time (p50, ms), in-process through the HTTP kernel, median of three runs of 300 requests after warm-up (every run returned status 200), MySQL 8.4, 20,000 posts and 200,000 comments, PHP 8.4 on one Windows machine, Lantern on versus off. `call_site_mode` at its dev-mode default (`all`), `keep_rate=0.1`.
+
+| Route | Off | Memory storage | Database storage |
+|---|---|---|---|
+| API list, eager loaded (4 queries) | 10.93 | 11.68 (+6.9%) | 11.71 (+7.1%) |
+| Blade page, eager loaded | 7.42 | 7.83 (+5.5%) | 7.94 (+7.0%) |
+| API list with an N+1 (152 queries) | 217.7 | 234.5 (+7.7%) | 217.3 (about 0%, within noise) |
+
+These are measurements from one environment, not guarantees, and they are noisy: with Lantern off, the same Blade route ranged from 7.04 to 8.86 ms between runs and the N+1 route from 192 to 245 ms, so differences of a few points are not meaningful. An earlier measurement of the same routes on the same data gave +2.7% to +3.9% on the API list and +9% to +16% on the N+1 route; expect overhead of roughly 3 to 10% on fast routes, which is about 0.4 to 0.8 ms per request. The cost is mostly per query (a call site and a span each) plus a small fixed cost per request, so it shows most on very fast routes and query-heavy requests. A concurrent-load test with a real server was not run. Measure on your own workload; sampling and `call_site_mode=lazy` reduce the cost.
+
+**Reproduce it.** Seed your own data, then run this script from your app root once with Lantern off and once on, on the same machine with the same data. It boots the app once and sends requests through the HTTP kernel in-process (no web server, so it measures the framework, Lantern and the database, not network or concurrency):
+
+```php
+<?php
+// bench.php: php bench.php /your/route [requests]
+define('LARAVEL_START', microtime(true));
+require 'vendor/autoload.php';
+$app = require 'bootstrap/app.php';
+$kernel = $app->make(Illuminate\Contracts\Http\Kernel::class);
+
+$route = $argv[1] ?? '/';
+$requests = (int) ($argv[2] ?? 300);
+$warmup = 20;
+$times = [];
+
+for ($i = 0; $i < $requests + $warmup; $i++) {
+    $request = Illuminate\Http\Request::create($route, 'GET');
+    $start = hrtime(true);
+    $response = $kernel->handle($request);
+    $ms = (hrtime(true) - $start) / 1e6;
+    $kernel->terminate($request, $response);
+    if ($i >= $warmup) {
+        $times[] = $ms;
+    }
+}
+
+sort($times);
+printf("p50 %.2f ms  p95 %.2f ms  (%d requests, status %d)\n",
+    $times[intdiv(count($times), 2)], $times[(int) (count($times) * 0.95)], count($times), $response->getStatusCode());
+```
+
+```bash
+# bash (in Git Bash on Windows, prefix with MSYS_NO_PATHCONV=1 so the route is not rewritten)
+LANTERN_ENABLED=false php bench.php /posts 300                                    # the "Off" column
+LANTERN_ENABLED=true  php bench.php /posts 300                                    # the "Memory storage" column
+LANTERN_ENABLED=true  LANTERN_STORAGE_DRIVER=database php bench.php /posts 300   # the "Database storage" column
+```
+
+```powershell
+# PowerShell
+$env:LANTERN_ENABLED = 'false'; php bench.php /posts 300
+$env:LANTERN_ENABLED = 'true';  php bench.php /posts 300
+$env:LANTERN_STORAGE_DRIVER = 'database'; php bench.php /posts 300
+```
+
+Check that the status printed is the one you expect (a mistyped route returns a fast 404 that makes any tool look free). Run each mode a few times and compare medians; single runs on a busy machine are noisy, which is why the Blade row above is flagged.
+
+### What is captured
+
+- **Always:** timing, memory, span names, query SQL shape (literals normalized), call sites, issue details.
+- **Bound values:** recorded when `capture_bindings` is on. Left unset, it follows `mode`, and `mode` defaults to `dev`, so a default install captures bindings; set `LANTERN_MODE=profile` or `LANTERN_CAPTURE_BINDINGS=false` for shared or production environments. Stored values are kept as-is, with strings truncated at 200 characters and objects reduced to their class name. Redaction by name (`password`, `token`, `secret`) only applies to *named* bindings, not to Laravel's usual positional `?` bindings, so a password bound positionally is stored in clear text. The agent CLI and MCP mask binding values unless you pass `--with-bindings`. The dashboard and its JSON API show stored values, so keep the `Lantern::auth` gate tight.
+- **Where it lives:** your own database, in `lantern_traces` and `lantern_issues` (or in memory, last 20 traces, with the default driver). Nothing is sent to a third party.
+- **Limiting it:** `LANTERN_ENABLED=false` or `LANTERN_KILL_SWITCH=true` stops recording; `capture_bindings=false` stops value capture; `ignore_paths`, `ignore_tables`, `ignore_sql_patterns`, `ignore_jobs` and `ignore_commands` exclude work; `sampling_rate` and `keep_rate` limit volume; `retention.days` and `lantern:prune` bound storage.
+
+### Safety
+
+Disabled unless enabled, and a disabled Lantern registers no listeners. Recording and storage failures are isolated from the request. Lantern's own queries and its dashboard are never traced. In a 1,000-request run memory drifted by under 1 MB.
+
+### Known limits
+
+- The dashboard, CLI, MCP tools and issue history need `LANTERN_STORAGE_DRIVER=database`.
+- `lazy_load` does not see single-row lazy loads or Laravel's automatic eager loading; repeating ones are still caught as `n_plus_one`.
+- `missing_index` relies on `EXPLAIN` and is opt-in; SQL Server is reviewed only.
+- Detectors use thresholds and heuristics; expect some false positives and tune `thresholds.*` and the ignore lists. Lantern does not catch every performance problem and does not prevent regressions on its own; it makes them visible and checkable.
+- The Boost guideline and skill follow the documented package layout but were not verified against a live `boost:install`.
+- Timing is noisy; gate on query counts and issue presence.
 
 ## Documentation
 
 - [Configuration](docs/CONFIG.md)
-- [Compatibility](docs/COMPATIBILITY.md)
-- [How it works](docs/HOW_IT_WORKS.md)
 - [Detectors](docs/DETECTORS.md)
+- [How it works](docs/HOW_IT_WORKS.md)
 - [CLI reference](docs/CLI.md)
 - [Agents guide](docs/AGENTS_GUIDE.md)
-
-## Limitations
-
-- Version `0.1.0-dev`; the API may change.
-- The CLI, agent tools and issue history need `LANTERN_STORAGE_DRIVER=database`; the default memory driver keeps only the last 20 traces in-process.
-- `lazy_load` does not see single-row lazy loads or Laravel's automatic eager loading; those are still caught as `n_plus_one` when they repeat.
-- `missing_index` relies on `EXPLAIN` and is opt-in.
-- Timing is noisy; gate CI on query counts and issue presence rather than milliseconds.
-- Overhead is small but not zero; it is highest on very fast routes and query-heavy requests.
+- [Compatibility](docs/COMPATIBILITY.md)
 
 ## License
 
