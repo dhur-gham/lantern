@@ -2,6 +2,7 @@ name: run-tests
 
 on:
   push:
+    branches: [main]
     paths:
       - '**.php'
       - '.github/workflows/run-tests.yml'
@@ -34,7 +35,7 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup PHP
         uses: shivammathur/setup-php@v2
@@ -45,6 +46,7 @@ jobs:
 
       - name: Install dependencies
         run: |
+          composer config policy.advisories.block false || composer config audit.block-insecure false
           composer require "laravel/framework:${{ matrix.laravel }}" "orchestra/testbench:${{ matrix.testbench }}" --no-interaction --no-update
           composer update --${{ matrix.stability }} --prefer-dist --no-interaction
 

@@ -145,6 +145,11 @@ final class CallSiteResolver
             return true;
         }
 
+        // PHP < 8.4 names closures `Namespace\{closure}` with no method, and lazy() frames carry nothing else
+        if ($function === 'Illuminate\Database\Concerns\{closure}') {
+            return true;
+        }
+
         return str_starts_with($function, '{closure:') && preg_match('/::(\w+)\(\)/', $function, $m) === 1 && isset(self::PAGING[$m[1]]);
     }
 

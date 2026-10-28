@@ -40,7 +40,8 @@ final class TimedEngineDebugPageTest extends LifecycleTestCase
         $this->get('/things')->assertOk();
 
         $mapper = $this->app->make(BladeMapper::class);
-        $this->assertNull($mapper->findCompiledView('/nonexistent/compiled.php'));
+        $find = new \ReflectionMethod($mapper, 'findCompiledView');
+        $this->assertNull($find->invoke($mapper, '/nonexistent/compiled.php'));
     }
 
     public function test_debug_exception_page_renders_for_view_exception(): void
