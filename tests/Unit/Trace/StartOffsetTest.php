@@ -16,7 +16,11 @@ final class StartOffsetTest extends TestCase
         $recorder->begin();
         $first = $recorder->start(SpanType::Middleware, 'first');
         $recorder->stop($first);
-        usleep(2000);
+        // usleep() can return early on Windows, so wait on the monotonic clock
+        $until = hrtime(true) + 2_000_000;
+        while (hrtime(true) < $until) {
+            usleep(200);
+        }
         $second = $recorder->start(SpanType::Middleware, 'second');
         $recorder->stop($second);
         $tree = $recorder->end()->toArray()['root'];
