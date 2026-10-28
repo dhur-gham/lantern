@@ -3,7 +3,7 @@
     "description": "Trace Laravel requests end-to-end and detect N+1, slow and duplicate queries and memory growth.",
     "type": "library",
     "license": "MIT",
-    "keywords": ["laravel", "profiler", "n+1", "debug", "livewire"],
+    "keywords": ["laravel", "profiler", "n-plus-one", "performance", "debug", "livewire", "filament", "tracing"],
     "require": {
         "php": "^8.2",
         "illuminate/support": "^11.0|^12.0"
