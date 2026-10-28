@@ -13,7 +13,7 @@ use Lantern\Trace\Trace;
 
 final class DatabaseTraceStore implements TraceStore
 {
-    private const JSON_FLAGS = JSON_PARTIAL_OUTPUT_ON_ERROR | JSON_INVALID_UTF8_SUBSTITUTE | JSON_UNESCAPED_SLASHES;
+    private const JSON_FLAGS = PayloadCodec::JSON_FLAGS;
 
     public function __construct(
         private readonly ConnectionResolverInterface $db,
@@ -162,21 +162,13 @@ final class DatabaseTraceStore implements TraceStore
     /** @param array<string, mixed> $data */
     private function encode(array $data): string
     {
-        $json = (string) json_encode($data, self::JSON_FLAGS);
-
-        return $this->compress && function_exists('gzencode') ? 'gz:'.base64_encode((string) gzencode($json, 6)) : $json;
+        return PayloadCodec::encode($data, $this->compress);
     }
 
     /** @return array<string, mixed> */
     private function decode(string $payload): array
     {
-        if (str_starts_with($payload, 'gz:')) {
-            $payload = (string) gzdecode((string) base64_decode(substr($payload, 3), true));
-        }
-
-        $data = json_decode($payload, true);
-
-        return is_array($data) ? $data : [];
+        return PayloadCodec::decode($payload) ?? [];
     }
 
     private function str(mixed $value, int $max): ?string

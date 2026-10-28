@@ -8,6 +8,12 @@ use Lantern\Instrumentation\Lifecycle\ViewNames;
 
 final class CallSiteResolver
 {
+    private const PAGING = [
+        'chunk' => 1, 'chunkById' => 1, 'chunkByIdDesc' => 1, 'orderedChunkById' => 1,
+        'lazy' => 1, 'lazyById' => 1, 'lazyByIdDesc' => 1, 'orderedLazyById' => 1,
+        'each' => 1, 'eachById' => 1,
+    ];
+
     /** @var list<string> */
     private array $roots;
 
@@ -36,7 +42,7 @@ final class CallSiteResolver
         $this->own = self::normalize(dirname(__DIR__));
     }
 
-    /** @return array{file: string, line: int, function: ?string, class: ?string, view: ?string, vendor: bool, depth: int}|null */
+    /** @return array{file: string, line: int, function: ?string, class: ?string, view: ?string, vendor: bool, depth: int, paging?: true}|null */
     public function resolve(): ?array
     {
         return $this->resolveFromTrace(debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, $this->limit));
@@ -46,14 +52,19 @@ final class CallSiteResolver
      * 'function'/'class' describe the code enclosing the call site (the next frame up the stack).
      *
      * @param  list<array<string, mixed>>  $trace
-     * @return array{file: string, line: int, function: ?string, class: ?string, view: ?string, vendor: bool, depth: int}|null
+     * @return array{file: string, line: int, function: ?string, class: ?string, view: ?string, vendor: bool, depth: int, paging?: true}|null
      */
     public function resolveFromTrace(array $trace): ?array
     {
         $trace = array_values($trace);
         $fallback = null;
+        $paging = false;
 
         foreach ($trace as $index => $frame) {
+            if (! $paging && self::isPagingFrame($frame)) {
+                $paging = true;
+            }
+
             $file = $frame['file'] ?? null;
             if (! is_string($file) || $file === '') {
                 continue;
@@ -108,6 +119,9 @@ final class CallSiteResolver
                 'vendor' => ! $isApp,
                 'depth' => (int) $index,
             ];
+            if ($paging) {
+                $hit['paging'] = true;
+            }
 
             if ($isApp) {
                 return $hit;
@@ -116,6 +130,22 @@ final class CallSiteResolver
         }
 
         return $fallback;
+    }
+
+    /** @param array<string, mixed> $frame */
+    private static function isPagingFrame(array $frame): bool
+    {
+        $class = $frame['class'] ?? null;
+        if (! is_string($class) || ! str_starts_with($class, 'Illuminate'.chr(92).'Database'.chr(92))) {
+            return false;
+        }
+
+        $function = (string) ($frame['function'] ?? '');
+        if (isset(self::PAGING[$function])) {
+            return true;
+        }
+
+        return str_starts_with($function, '{closure:') && preg_match('/::(\w+)\(\)/', $function, $m) === 1 && isset(self::PAGING[$m[1]]);
     }
 
     private function isApp(string $path): bool

@@ -60,8 +60,12 @@ final class TraceQueries
             }
 
             $row = $this->withIsoDates((array) $row);
-            $payload = $this->decode((string) $row['payload']);
-            $row['payload'] = $payload;
+            $decoded = $this->decode((string) $row['payload']);
+            if ($decoded === null && trim((string) $row['payload']) !== '') {
+                $row['error'] = 'payload_unreadable';
+            }
+            $payload = $decoded ?? [];
+            $row['payload'] = $decoded;
             $row['tree'] = $payload['root'] ?? null;
             $row['issues'] = array_values((array) ($payload['meta']['issues'] ?? []));
 
@@ -148,15 +152,9 @@ final class TraceQueries
         return $this->db->connection($this->connection ?: null);
     }
 
-    /** @return array<string, mixed> */
-    private function decode(string $payload): array
+    /** @return array<string, mixed>|null */
+    private function decode(string $payload): ?array
     {
-        if (str_starts_with($payload, 'gz:')) {
-            $payload = (string) gzdecode((string) base64_decode(substr($payload, 3), true));
-        }
-
-        $data = json_decode($payload, true);
-
-        return is_array($data) ? $data : [];
+        return PayloadCodec::decode($payload);
     }
 }

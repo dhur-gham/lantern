@@ -7,6 +7,10 @@
     <testsuites>
         <testsuite name="Lantern">
             <directory>tests</directory>
+            <exclude>tests/Stress</exclude>
+        </testsuite>
+        <testsuite name="Stress">
+            <directory>tests/Stress</directory>
         </testsuite>
     </testsuites>
     <source>

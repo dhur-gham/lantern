@@ -69,6 +69,14 @@ class LanternServiceProvider extends ServiceProvider
 
         $this->app->singleton(Analyzer::class, fn ($app) => new Analyzer((array) $app['config']->get('lantern', [])));
 
+        // Jobs/commands listen before Lifecycle so a job trace is finished before its JobProcessed reset runs.
+        if (class_exists(\Lantern\Instrumentation\Job\JobInstrumentation::class)) {
+            \Lantern\Instrumentation\Job\JobInstrumentation::register($this->app);
+        }
+        if (class_exists(\Lantern\Instrumentation\Command\CommandInstrumentation::class)) {
+            \Lantern\Instrumentation\Command\CommandInstrumentation::register($this->app);
+        }
+
         // Lifecycle first: it begins the trace as early as a provider can.
         $lifecycle = new LifecycleInstrumentation($this->app);
         $this->app->instance(LifecycleInstrumentation::class, $lifecycle);
@@ -114,7 +122,7 @@ class LanternServiceProvider extends ServiceProvider
 
             $this->commands(array_values(array_filter([
                 InstallCommand::class, StatusCommand::class, TraceDumpCommand::class, PruneCommand::class,
-                \Lantern\Console\IssuesCommand::class, \Lantern\Console\TraceCommand::class,
+                ...\Lantern\Agent\Commands::all(),
             ], 'class_exists')));
         }
     }

@@ -99,19 +99,24 @@ final class Trace
             'total_ms' => $this->totalMs(),
             'peak_memory' => $this->peakMemory(),
             'meta' => $this->meta,
-            'root' => $root === null ? null : $this->node($root),
+            'root' => $root === null ? null : $this->node($root, 0, $this->maxDepth()),
         ];
     }
 
     /** @return array<string, mixed> */
-    private function node(Span $span): array
+    private function node(Span $span, int $depth, int $maxDepth): array
     {
         $children = [];
-        foreach ($this->children($span->id) as $child) {
-            $children[] = $this->node($child);
+        $omitted = 0;
+        if ($depth + 1 >= $maxDepth) {
+            $omitted = count($this->children[$span->id] ?? []);
+        } else {
+            foreach ($this->children($span->id) as $child) {
+                $children[] = $this->node($child, $depth + 1, $maxDepth);
+            }
         }
 
-        return [
+        return ($omitted > 0 ? ['children_omitted' => $omitted] : []) + [
             'id' => $span->id,
             'type' => $span->type->value,
             'name' => $span->name,
@@ -123,6 +128,17 @@ final class Trace
             'meta' => $span->meta,
             'children' => $children,
         ];
+    }
+
+    private function maxDepth(): int
+    {
+        try {
+            $value = (int) config('lantern.max_tree_depth', 100);
+        } catch (\Throwable) {
+            $value = 100;
+        }
+
+        return $value > 0 ? $value : 100;
     }
 
     private static function uuid(): string

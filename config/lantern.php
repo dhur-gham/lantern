@@ -77,7 +77,25 @@ return [
         'horizon*',
     ],
 
-    // Tail sampling (applied when a trace finishes): slow, 5xx and issue-bearing traces are always kept.
+    // Spans nested deeper than this are dropped from stored/rendered trees (counted in `children_omitted`).
+    'max_tree_depth' => (int) env('LANTERN_MAX_TREE_DEPTH', 100),
+
+    // Defaults for `lantern:check` (CI / agent verification gate); CLI flags override. null = no limit.
+    'check' => [
+        'max_queries' => null,
+        'max_ms' => null,
+        'fail_on' => 'critical', // lowest severity that fails the gate: info | warning | critical
+        'traces' => 50,          // how many recent traces are examined
+    ],
+
+    // Queue jobs and artisan commands are traced as their own traces. Loop wrappers (queue:work, schedule:work,
+    // serve, ...) are always skipped. Add an `ignore_commands` array (Str::is patterns) to replace the built-in
+    // list (lantern:*, migrate*, db:*, make:*, ...); it is left out here so the built-in list applies.
+    'trace_jobs' => (bool) env('LANTERN_TRACE_JOBS', true),
+    'trace_commands' => (bool) env('LANTERN_TRACE_COMMANDS', true),
+    'ignore_jobs' => [],
+
+    // Tail sampling (applied when a trace finishes): slow, 5xx, failed and issue-bearing traces are always kept.
     'keep_slow_ms' => (int) env('LANTERN_KEEP_SLOW_MS', 1000),
     'keep_rate' => (float) env('LANTERN_KEEP_RATE', 0.1),
 

@@ -4,66 +4,80 @@ declare(strict_types=1);
 
 namespace Lantern\Console;
 
-use Illuminate\Console\Command;
-use Lantern\Storage\TraceQueries;
-use Throwable;
+use Lantern\Agent\AgentCommand;
+use Lantern\Agent\AgentException;
+use Lantern\Agent\Findings;
+use Lantern\Agent\Output;
+use Lantern\Agent\Reader;
 
-final class IssuesCommand extends Command
+final class IssuesCommand extends AgentCommand
 {
-    protected $signature = 'lantern:issues {--type= : Filter by issue type} {--severity= : Filter by severity} {--sort=total_ms : Sort column} {--limit=20 : Max rows}';
+    protected $signature = 'lantern:issues
+        {--type= : Filter by issue type}
+        {--severity= : Filter by severity}
+        {--sort=total_ms : total_ms, occurrences or last_seen}
+        {--since= : Only issues last seen within a window (30m, 24h, 7d) or after a date}
+        {--limit=10 : Max issues returned}
+        {--offset=0 : Skip this many issues}
+        {--fields= : Comma-separated fields to return}
+        {--full : Return every field, including evidence}
+        {--format=table : table, json, ndjson or markdown}
+        {--pretty : Pretty-print json}';
 
-    protected $description = 'Show the ranked list of detected performance issues';
+    protected $description = 'List detected performance issues (stable finding model)';
 
-    public function handle(): int
+    protected array $itemFields = Findings::ALL_FIELDS;
+
+    protected function perform(Reader $reader): int
     {
-        if (config('lantern.storage.driver', 'memory') !== 'database') {
-            $this->warn('Lantern storage is not configured. Set LANTERN_STORAGE_DRIVER=database and run the migrations.');
-
-            return self::FAILURE;
+        $sort = (string) $this->option('sort');
+        if (! in_array($sort, ['total_ms', 'occurrences', 'last_seen'], true)) {
+            throw AgentException::usage('Invalid --sort: '.$sort, 'Use total_ms, occurrences or last_seen.');
         }
-
+        $limit = $this->intOption('limit', 10, 1);
+        $offset = $this->intOption('offset', 0);
+        $fields = $this->fields() ?? ($this->option('full') ? Findings::ALL_FIELDS : Findings::DEFAULT_FIELDS);
         $filters = array_filter([
             'type' => $this->option('type'),
             'severity' => $this->option('severity'),
-            'sort' => $this->option('sort'),
+            'sort' => $sort,
         ], fn ($v) => $v !== null && $v !== '');
 
-        try {
-            $issues = $this->laravel->make(TraceQueries::class)->issues($filters, max(1, (int) $this->option('limit')));
-        } catch (Throwable $e) {
-            $this->error('Could not read Lantern storage: '.$e->getMessage());
+        [$findings, $total, $exact] = $reader->issuesPage($filters, $limit, $offset, Reader::since($this->option('since')));
 
-            return self::FAILURE;
+        if (in_array('evidence', $fields, true)) {
+            foreach ($findings as $i => $f) {
+                $findings[$i] = $reader->finding($f['id']);
+            }
         }
 
-        if ($issues === []) {
-            $this->info('No issues recorded yet.');
+        if ($findings === [] && $total === 0 && $this->format() === 'table') {
+            $this->output->writeln('No issues recorded yet.');
 
             return self::SUCCESS;
         }
 
-        $this->table(
-            ['Severity', 'Type', 'Title', 'Occurrences', 'Total ms', 'Call site', 'Suggestion'],
-            array_map(fn (array $i): array => [
-                $i['severity'] ?? '?',
-                $i['type'] ?? '?',
-                $i['title'] ?? '?',
-                (int) ($i['occurrences'] ?? 0),
-                number_format((float) ($i['total_ms'] ?? 0), 2),
-                self::site($i['call_site'] ?? null),
-                $i['suggestion'] ?? '',
-            ], $issues),
-        );
+        $truncated = $offset + count($findings) < $total;
+        $payload = [
+            'schema_version' => Findings::VERSION,
+            'schema' => 'lantern.issues',
+            'generated_at' => now()->toIso8601String(),
+            'total' => $total,
+            'returned' => count($findings),
+            'offset' => $offset,
+            'truncated' => $truncated,
+        ];
+        if (! $exact) {
+            $payload['total_capped'] = true;
+        }
+        if ($truncated) {
+            $payload['next_offset'] = $offset + count($findings);
+            $payload['hint'] = $this->truncationHint(count($findings), $total, $offset);
+        }
+        $payload['issues'] = Output::project($findings, $fields);
+
+        $this->emit($payload, 'issues', $fields);
 
         return self::SUCCESS;
-    }
-
-    private static function site(mixed $site): string
-    {
-        if (is_string($site)) {
-            $site = json_decode($site, true);
-        }
-
-        return is_array($site) && isset($site['file']) ? $site['file'].':'.($site['line'] ?? '?') : '-';
     }
 }

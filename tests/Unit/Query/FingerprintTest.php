@@ -112,4 +112,30 @@ final class FingerprintTest extends TestCase
         $this->assertNotSame($f->bindingsKey($sql, [1]), $f->bindingsKey('select * from posts where id = ?', [1]));
         $this->assertNotSame($f->bindingsKey($sql, [1]), $f->bindingsKey($sql, ['1']));
     }
+
+    public function test_huge_lists_collapse_and_stay_distinct(): void
+    {
+        $f = new Fingerprinter;
+        $ids = implode(',', range(1, 60000));
+        $rows = implode(',', array_map(fn ($i) => "($i,'x')", range(1, 40000)));
+
+        $this->assertSame('select * from a where id in (?)', $f->normalize("select * from a where id in ($ids)"));
+        $this->assertNotSame($f->fingerprint("select * from a where id in ($ids)"), $f->fingerprint("select * from b where id in ($ids)"));
+        $this->assertSame('insert into t(a,b)values(?,?)', $f->normalize('insert into t (a, b) values '.$rows));
+        $this->assertSame('select * from t where a in(select ?)', $f->normalize('select * from t where a in (select 1)'));
+    }
+
+    public function test_operator_spacing_is_ignored(): void
+    {
+        $f = new Fingerprinter;
+
+        $this->assertSame($f->fingerprint('select * from t where id = 1 and x >= 2 and y <> 3'), $f->fingerprint('select * from t where id=1 and x>=2 and y<>3'));
+    }
+
+    public function test_backslash_escaped_quote_is_one_literal(): void
+    {
+        $f = new Fingerprinter;
+
+        $this->assertSame($f->fingerprint("select * from t where n = 'x' and id = 1"), $f->fingerprint("select * from t where n = 'it\'s' and id = 1"));
+    }
 }

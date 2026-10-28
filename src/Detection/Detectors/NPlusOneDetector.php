@@ -32,6 +32,10 @@ final class NPlusOneDetector implements Detector
                 continue;
             }
 
+            if (($span->callSite['paging'] ?? false) === true) {
+                continue;
+            }
+
             $site = $span->callSite !== null ? $span->callSite['file'].':'.$span->callSite['line'] : 'unknown';
             $groups[$span->meta['fingerprint'].'|'.$site][] = $span;
         }

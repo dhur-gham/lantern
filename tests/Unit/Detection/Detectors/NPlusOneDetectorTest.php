@@ -107,4 +107,19 @@ final class NPlusOneDetectorTest extends TestCase
         }
         $this->assertCount(20, $this->det()->detect($this->trace()));
     }
+
+    public function test_paging_call_site_is_not_flagged(): void
+    {
+        for ($i = 0; $i < 8; $i++) {
+            $this->q('select * from posts where id > '.$i, [$i]);
+        }
+        $this->assertNotEmpty($this->det()->detect($this->r->end()));
+
+        $r = new Recorder();
+        $r->begin([], 0);
+        for ($i = 0; $i < 8; $i++) {
+            $r->recordClosed(SpanType::Query, 'q', 0, 1, ['sql' => 'select 1', 'fingerprint' => 'f', 'failed' => false, 'time_ms' => 1.0], ['file' => 'app/A.php', 'line' => 1, 'paging' => true]);
+        }
+        $this->assertSame([], $this->det()->detect($r->end()));
+    }
 }

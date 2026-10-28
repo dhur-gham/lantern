@@ -124,10 +124,76 @@ final class Fingerprinter
 
         $out = trim((string) preg_replace('/ {2,}/', ' ', $out));
         $out = (string) preg_replace('/ ?([(),]) ?/', '$1', $out);
-        $out = (string) preg_replace('/\bin\((?:\?,)*\?\)/', 'in (?)', $out);
-        $out = (string) preg_replace('/\b(values\(\?(?:,\?)*\))(?:,\(\?(?:,\?)*\))+/', '$1', $out);
+        $out = (string) preg_replace('/ ?([=<>!]+) ?/', ' $1 ', $out);
 
-        return $out;
+        return $this->collapseValues($this->collapseIn($out));
+    }
+
+    private function placeholderRun(string $s, int $at): int
+    {
+        $n = strspn($s, '?,', $at);
+        if ($n === 0 || $s[$at] !== '?' || $s[$at + $n - 1] !== '?') {
+            return 0;
+        }
+
+        return str_replace('?,', '', substr($s, $at, $n)) === '?' ? $n : 0;
+    }
+
+    private function wordBoundaryBefore(string $s, int $pos): bool
+    {
+        return $pos === 0 || ! (ctype_alnum($s[$pos - 1]) || $s[$pos - 1] === '_');
+    }
+
+    private function collapseIn(string $s): string
+    {
+        $out = '';
+        $pos = 0;
+
+        while (($at = strpos($s, 'in(', $pos)) !== false) {
+            $start = $at + 3;
+            $n = $this->wordBoundaryBefore($s, $at) ? $this->placeholderRun($s, $start) : 0;
+
+            if ($n > 0 && ($s[$start + $n] ?? '') === ')') {
+                $out .= substr($s, $pos, $at - $pos).'in (?)';
+                $pos = $start + $n + 1;
+
+                continue;
+            }
+
+            $out .= substr($s, $pos, $start - $pos);
+            $pos = $start;
+        }
+
+        return $out.substr($s, $pos);
+    }
+
+    private function collapseValues(string $s): string
+    {
+        $out = '';
+        $pos = 0;
+
+        while (($at = strpos($s, 'values(', $pos)) !== false) {
+            $start = $at + 7;
+            $n = $this->wordBoundaryBefore($s, $at) ? $this->placeholderRun($s, $start) : 0;
+
+            if ($n === 0 || ($s[$start + $n] ?? '') !== ')') {
+                $out .= substr($s, $pos, $start - $pos);
+                $pos = $start;
+
+                continue;
+            }
+
+            $first = $start + $n + 1;
+            $end = $first;
+            while (substr($s, $end, 2) === ',(' && ($m = $this->placeholderRun($s, $end + 2)) > 0 && ($s[$end + 2 + $m] ?? '') === ')') {
+                $end += $m + 3;
+            }
+
+            $out .= substr($s, $pos, $first - $pos);
+            $pos = $end;
+        }
+
+        return $out.substr($s, $pos);
     }
 
     public function fingerprint(string $sql): string
@@ -163,6 +229,12 @@ final class Fingerprinter
         $i = $start + 1;
 
         while ($i < $len) {
+            if ($quote === "'" && $sql[$i] === '\\') {
+                $i += 2;
+
+                continue;
+            }
+
             if ($sql[$i] === $quote) {
                 if (($sql[$i + 1] ?? '') === $quote) {
                     $i += 2;

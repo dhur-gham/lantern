@@ -40,7 +40,7 @@ final class DuplicateQueryDetector implements Detector
                 continue; // bindings unknown: cannot tell duplicates from different parameters
             }
 
-            $groups[md5((string) $span->meta['sql']).'|'.$bk][] = $span;
+            $groups[($span->meta['connection'] ?? '').'|'.md5((string) $span->meta['sql']).'|'.$bk][] = $span;
         }
 
         $issues = [];

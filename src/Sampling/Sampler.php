@@ -48,7 +48,7 @@ final class Sampler
         }
 
         $status = $trace->meta['status'] ?? $trace->root()?->meta['status'] ?? null;
-        if (is_numeric($status) && (int) $status >= 500) {
+        if ((is_numeric($status) && (int) $status >= 500) || $status === 'failed') {
             return true;
         }
 

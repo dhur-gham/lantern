@@ -18,7 +18,7 @@ final class Recorder
     public function __construct() {}
 
     /** @param array<string, mixed> $meta */
-    public function begin(array $meta = [], ?int $startNs = null): Trace
+    public function begin(array $meta = [], ?int $startNs = null, SpanType $rootType = SpanType::Request): Trace
     {
         $this->reset();
 
@@ -30,7 +30,7 @@ final class Recorder
         $this->trace->meta = $meta;
         $this->active = true;
 
-        $root = new Span(++$this->nextId, null, SpanType::Request, 'request', $startNs);
+        $root = new Span(++$this->nextId, null, $rootType, $rootType->value, $startNs);
         $this->trace->add($root);
         $this->stack[] = $root;
 

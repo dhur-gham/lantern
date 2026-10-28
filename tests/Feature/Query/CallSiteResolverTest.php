@@ -176,4 +176,29 @@ final class CallSiteResolverTest extends TestCase
         $this->assertSame(CallSiteFixture::line('lazy'), $lazy['line']);
         $this->assertGreaterThan($plain['depth'], $lazy['depth']);
     }
+
+    public function test_paging_frames_below_the_app_frame_mark_the_site(): void
+    {
+        $r = new CallSiteResolver(['/proj/app'], '/proj');
+        $db = 'Illuminate\Database\Eloquent\Builder';
+        $paging = [
+            ['file' => '/proj/vendor/laravel/framework/src/Illuminate/Database/Concerns/BuildsQueries.php', 'line' => 1, 'function' => 'get', 'class' => $db],
+            ['file' => '/proj/app/Job.php', 'line' => 7, 'function' => 'chunk', 'class' => $db],
+        ];
+        $this->assertTrue($r->resolveFromTrace($paging)['paging']);
+
+        $lazy = [
+            ['file' => '/proj/vendor/laravel/framework/src/Illuminate/Database/Concerns/BuildsQueries.php', 'line' => 1, 'function' => '{closure:Illuminate\Database\Concerns\BuildsQueries::lazy():9}', 'class' => $db],
+            ['file' => '/proj/app/Job.php', 'line' => 7, 'function' => 'x'],
+        ];
+        $this->assertTrue($r->resolveFromTrace($lazy)['paging']);
+
+        // query issued inside the chunk callback: app frame comes first
+        $callback = [
+            ['file' => '/proj/app/Job.php', 'line' => 8, 'function' => 'first', 'class' => $db],
+            ['file' => '/proj/vendor/laravel/framework/src/Illuminate/Database/Concerns/BuildsQueries.php', 'line' => 1, 'function' => '{closure}'],
+            ['file' => '/proj/app/Job.php', 'line' => 7, 'function' => 'chunk', 'class' => $db],
+        ];
+        $this->assertArrayNotHasKey('paging', $r->resolveFromTrace($callback));
+    }
 }
