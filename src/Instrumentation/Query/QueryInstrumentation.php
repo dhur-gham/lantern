@@ -20,6 +20,7 @@ use Illuminate\Queue\Events\JobFailed;
 use Illuminate\Queue\Events\JobProcessed;
 use Lantern\Query\CallSiteResolver;
 use Lantern\Query\Fingerprinter;
+use Lantern\Query\InListSize;
 use Lantern\Trace\Recorder;
 use Lantern\Trace\SpanType;
 use Throwable;
@@ -275,6 +276,9 @@ final class QueryInstrumentation
 
         $meta['connection'] = $connection->getName();
         $meta['transaction_level'] = $connection->transactionLevel();
+        if (($inSize = InListSize::of($sql)) !== null) {
+            $meta['in_size'] = $inSize;
+        }
         foreach ($extra as $key => $value) {
             $meta[$key] = $value;
         }

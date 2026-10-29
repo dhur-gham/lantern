@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Lantern\Agent;
 
 use Illuminate\Console\Command;
+use Lantern\LanternServiceProvider;
 use Lantern\Storage\TraceQueries;
 use Symfony\Component\Console\Exception\ExceptionInterface;
 use Symfony\Component\Console\Input\InputInterface;
@@ -59,6 +60,7 @@ abstract class AgentCommand extends Command
         $message = trim((string) preg_replace('/\s*\(Connection:.*$/s', '', $e->getMessage()));
         $hint = match (true) {
             (bool) preg_match('/base table or view not found|no such table|undefined table|doesn.t exist/i', $message) => 'Lantern tables are missing. Run php artisan migrate; if it says nothing to migrate, delete the lantern_* rows from the migrations table and migrate again.',
+            (bool) preg_match('/no such column|unknown column|column .* does not exist/i', $message) => 'Lantern tables are from an older version. Run php artisan migrate.',
             (bool) preg_match('/connection refused|could not find driver|access denied|unknown database|getaddrinfo/i', $message) => 'Check the DB_* settings (or LANTERN_DB_CONNECTION) and that the database is running.',
             default => null,
         };
@@ -87,6 +89,38 @@ abstract class AgentCommand extends Command
         }
 
         return (int) $raw;
+    }
+
+    /**
+     * Storage filters from --path, --route, --status and the app scope (--app, --all-apps), for the options the
+     * command declares. The app scope defaults to the current app; rows without an app tag always match.
+     *
+     * @return array{path_is?: string, route_is?: string, status?: string, app?: string}
+     */
+    protected function scope(bool $route = true): array
+    {
+        $scope = [];
+        foreach (['path' => 'path_is', 'route' => 'route_is', 'status' => 'status'] as $option => $key) {
+            if ($this->hasOption($option) && ($route || $option !== 'route') && (string) $this->option($option) !== '') {
+                $scope[$key] = (string) $this->option($option);
+            }
+        }
+        if (! $this->hasOption('app')) {
+            return $scope;
+        }
+
+        $explicit = (string) $this->option('app');
+        if ($explicit !== '' && $this->option('all-apps')) {
+            throw AgentException::usage('Use either --app or --all-apps, not both.');
+        }
+        if (! $this->option('all-apps')) {
+            $app = $explicit !== '' ? $explicit : LanternServiceProvider::appName($this->laravel['config']);
+            if ($app !== null) {
+                $scope['app'] = $app;
+            }
+        }
+
+        return $scope;
     }
 
     protected function floatOption(string $name): ?float

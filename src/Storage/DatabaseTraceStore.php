@@ -6,6 +6,7 @@ namespace Lantern\Storage;
 
 use Illuminate\Database\Connection;
 use Illuminate\Database\ConnectionResolverInterface;
+use Illuminate\Database\QueryException;
 use Illuminate\Database\Query\Expression;
 use Lantern\Detection\Issue;
 use Lantern\Instrumentation\Query\QuerySuspend;
@@ -15,10 +16,14 @@ final class DatabaseTraceStore implements TraceStore
 {
     private const JSON_FLAGS = PayloadCodec::JSON_FLAGS;
 
+    /** Set once a write fails because the `app` column is missing (package upgraded, migration not yet run). */
+    private bool $legacySchema = false;
+
     public function __construct(
         private readonly ConnectionResolverInterface $db,
         private readonly ?string $connection = null,
         private readonly bool $compress = false,
+        private readonly ?string $app = null,
     ) {
     }
 
@@ -45,14 +50,39 @@ final class DatabaseTraceStore implements TraceStore
                 'created_at' => $now,
             ];
 
-            $conn->transaction(function () use ($conn, $row, $issues, $startedAt): void {
-                $conn->table('lantern_traces')->insert($row);
-
-                $rows = $this->issueRows($issues, $startedAt, (string) $row['id']);
-                if ($rows !== []) {
-                    $conn->table('lantern_issues')->upsert($rows, ['issue_key'], $this->issueUpdate($conn));
+            try {
+                $this->write($conn, $row, $issues, $startedAt, ! $this->legacySchema);
+            } catch (QueryException $e) {
+                if ($this->legacySchema || ! preg_match('/no column named app\b|unknown column \'app\'|column "app" of relation/i', $e->getMessage())) {
+                    throw $e;
                 }
-            });
+                $this->legacySchema = true;
+                $this->write($conn, $row, $issues, $startedAt, false);
+            }
+        });
+    }
+
+    /**
+     * @param array<string, mixed> $row
+     * @param list<Issue> $issues
+     */
+    private function write(Connection $conn, array $row, array $issues, string $startedAt, bool $withApp): void
+    {
+        $app = $withApp ? $this->str($this->app, 100) : null;
+        if ($withApp) {
+            $row['app'] = $app;
+        }
+
+        $conn->transaction(function () use ($conn, $row, $issues, $startedAt, $withApp, $app): void {
+            $conn->table('lantern_traces')->insert($row);
+
+            $rows = $this->issueRows($issues, $startedAt, (string) $row['id']);
+            if ($rows !== []) {
+                if ($withApp) {
+                    $rows = array_map(fn (array $r): array => $r + ['app' => $app], $rows);
+                }
+                $conn->table('lantern_issues')->upsert($rows, ['issue_key'], $this->issueUpdate($conn, $withApp));
+            }
         });
     }
 
@@ -123,7 +153,7 @@ final class DatabaseTraceStore implements TraceStore
     }
 
     /** @return array<string, Expression> */
-    private function issueUpdate(Connection $conn): array
+    private function issueUpdate(Connection $conn, bool $withApp = false): array
     {
         $g = $conn->getQueryGrammar();
         $table = $g->wrapTable('lantern_issues');
@@ -139,7 +169,7 @@ final class DatabaseTraceStore implements TraceStore
         };
         $greatest = $driver === 'sqlite' ? 'max' : 'greatest';
 
-        return [
+        $update = [
             'severity' => new Expression($new('severity')),
             'title' => new Expression($new('title')),
             'call_site' => new Expression($new('call_site')),
@@ -151,6 +181,11 @@ final class DatabaseTraceStore implements TraceStore
             'last_seen' => new Expression($new('last_seen')),
             'last_trace_id' => new Expression($new('last_trace_id')),
         ];
+        if ($withApp) {
+            $update['app'] = new Expression('coalesce('.$new('app').', '.$cur('app').')');
+        }
+
+        return $update;
     }
 
     private function conn(): Connection

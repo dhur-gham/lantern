@@ -95,14 +95,18 @@ final class TraceDiffCheckTest extends AgentTestCase
         [$code, $data] = $this->jsonOut('lantern:diff', ['before' => 'before', 'after' => 'after']);
 
         $this->assertSame(0, $code);
-        $this->assertSame(['schema_version', 'schema', 'verdict', 'before', 'after', 'dimensions', 'queries', 'query_ms', 'duration_ms', 'resolved', 'new', 'threshold', 'unchanged'], array_keys($data));
+        $this->assertSame(['schema_version', 'schema', 'verdict', 'before', 'after', 'dimensions', 'queries', 'query_ms', 'duration_ms', 'resolved', 'new', 'changed', 'threshold', 'unchanged'], array_keys($data));
         $this->assertSame(['before' => 51, 'after' => 3, 'delta' => -48], $data['queries']);
         $this->assertSame(['before' => 100, 'after' => 20, 'delta' => -80], $data['duration_ms']);
         $this->assertSame(['k1'], array_column($data['resolved'], 'id'));
         $this->assertSame(['k3'], array_column($data['new'], 'id'));
-        $this->assertSame(['k2'], array_column($data['unchanged'], 'id'));
+        $this->assertSame([], $data['unchanged']);
+        $this->assertSame(['k2'], array_column($data['changed'], 'id'));
+        $this->assertSame('improved', $data['changed'][0]['status']);
+        $this->assertSame(51, $data['changed'][0]['before']['count']);
+        $this->assertSame(3, $data['changed'][0]['after']['count']);
         $this->assertSame('improved', $data['verdict']);
-        $this->assertSame(['queries' => 'improved', 'query_ms' => 'improved', 'duration_ms' => 'improved', 'findings' => ['resolved' => 1, 'new' => 1, 'verdict' => 'same']], $data['dimensions']);
+        $this->assertSame(['queries' => 'improved', 'query_ms' => 'improved', 'duration_ms' => 'improved', 'findings' => ['resolved' => 1, 'new' => 1, 'improved' => 1, 'regressed' => 0, 'verdict' => 'improved']], $data['dimensions']);
 
         $this->seedTrace('worse', 3, ['k9'], 20, '2026-01-01 13:00:00');
         $this->seedTrace('base', 3, [], 20, '2026-01-01 14:00:00');
@@ -249,6 +253,90 @@ final class TraceDiffCheckTest extends AgentTestCase
         $this->assertSame('***@x.io', Redactor::mask('bob@x.io'));
         $this->assertSame('[token]', Redactor::mask('sk_live_abcdefghijklmnopqrstuvwxyz'));
         $this->assertSame('[number]', Redactor::mask('4111 1111 1111 1111'));
+    }
+
+    /** @param array<string, mixed> $over */
+    private function seedShapeTrace(string $id, string $at, array $over = []): void
+    {
+        $this->seedTrace($id, 3, [], 100, $at);
+        $issue = array_replace([
+            'key' => 'key-'.$id, 'type' => 'slow_query', 'severity' => 'warning', 'title' => 'Slow query at app/Foo.php', 'count' => 1, 'total_ms' => 100.0,
+            'call_site' => ['file' => base_path('app/Foo.php'), 'line' => 121, 'function' => 'Foo@bar'], 'span_ids' => [2],
+            'meta' => ['fingerprint' => 'fpq'], 'suggestion' => null,
+        ], $over);
+        $payload = json_decode((string) \Illuminate\Support\Facades\DB::table('lantern_traces')->where('id', $id)->value('payload'), true);
+        $payload['meta']['issues'] = [$issue];
+        \Illuminate\Support\Facades\DB::table('lantern_traces')->where('id', $id)->update(['payload' => json_encode($payload), 'issue_count' => 1]);
+    }
+
+    public function test_diff_matches_a_moved_query_instead_of_resolved_plus_new(): void
+    {
+        $this->seedShapeTrace('b1', '2026-01-01 10:00:00', ['total_ms' => 2731.0]);
+        $this->seedShapeTrace('b2', '2026-01-01 11:00:00', [
+            'total_ms' => 247.0,
+            'call_site' => ['file' => base_path('app/Foo.php'), 'line' => 126, 'function' => 'Foo@bar'],
+        ]);
+
+        [, $data] = $this->jsonOut('lantern:diff', ['before' => 'b1', 'after' => 'b2']);
+
+        $this->assertSame([], $data['resolved']);
+        $this->assertSame([], $data['new']);
+        $this->assertCount(1, $data['changed']);
+        $this->assertSame('improved', $data['changed'][0]['status']);
+        $this->assertSame('key-b1', $data['changed'][0]['before_id']);
+        $this->assertSame('key-b2', $data['changed'][0]['id']);
+        $this->assertEquals(2731.0, $data['changed'][0]['before']['total_ms']);
+        $this->assertEquals(247.0, $data['changed'][0]['after']['total_ms']);
+        $this->assertSame(121, $data['changed'][0]['before']['call_site']['line']);
+        $this->assertSame(126, $data['changed'][0]['after']['call_site']['line']);
+        $this->assertSame('improved', $data['verdict']);
+        $this->assertSame(1, $data['dimensions']['findings']['improved']);
+    }
+
+    public function test_diff_marks_a_matched_finding_that_got_slower_as_regressed(): void
+    {
+        $this->seedShapeTrace('r1', '2026-01-01 10:00:00', ['total_ms' => 247.0]);
+        $this->seedShapeTrace('r2', '2026-01-01 11:00:00', [
+            'total_ms' => 2731.0,
+            'call_site' => ['file' => base_path('app/Foo.php'), 'line' => 126, 'function' => 'Foo@bar'],
+        ]);
+
+        [, $data] = $this->jsonOut('lantern:diff', ['before' => 'r1', 'after' => 'r2']);
+
+        $this->assertSame([], $data['new']);
+        $this->assertSame('regressed', $data['changed'][0]['status']);
+        $this->assertSame('regressed', $data['verdict']);
+        $this->assertSame(1, $data['dimensions']['findings']['regressed']);
+    }
+
+    public function test_diff_noise_within_tolerance_is_unchanged_and_other_function_is_a_different_shape(): void
+    {
+        $this->seedShapeTrace('n1', '2026-01-01 10:00:00', ['total_ms' => 200.0]);
+        $this->seedShapeTrace('n2', '2026-01-01 11:00:00', ['total_ms' => 210.0]);
+        $this->seedShapeTrace('n3', '2026-01-01 12:00:00', [
+            'total_ms' => 200.0,
+            'call_site' => ['file' => base_path('app/Foo.php'), 'line' => 121, 'function' => 'Foo@other'],
+        ]);
+
+        [, $data] = $this->jsonOut('lantern:diff', ['before' => 'n1', 'after' => 'n2']);
+        $this->assertSame('unchanged', $data['changed'][0]['status']);
+        $this->assertSame(['key-n2'], array_column($data['unchanged'], 'id'));
+
+        [, $data] = $this->jsonOut('lantern:diff', ['before' => 'n1', 'after' => 'n3']);
+        $this->assertSame(['key-n1'], array_column($data['resolved'], 'id'));
+        $this->assertSame(['key-n3'], array_column($data['new'], 'id'));
+        $this->assertSame([], $data['changed']);
+    }
+
+    public function test_finding_shape_ignores_line_but_not_function_or_fingerprint(): void
+    {
+        $base = ['type' => 'n_plus_one', 'key' => 'x', 'title' => 't', 'call_site' => ['file' => base_path('app/Foo.php'), 'line' => 10, 'function' => 'A@b'], 'meta' => ['fingerprint' => 'f1']];
+        $moved = array_replace($base, ['key' => 'y', 'call_site' => ['file' => base_path('app/Foo.php'), 'line' => 99, 'function' => 'A@b']]);
+
+        $this->assertSame(\Lantern\Agent\Findings::shape($base), \Lantern\Agent\Findings::shape($moved));
+        $this->assertNotSame(\Lantern\Agent\Findings::shape($base), \Lantern\Agent\Findings::shape(array_replace_recursive($base, ['call_site' => ['function' => 'A@c']])));
+        $this->assertNotSame(\Lantern\Agent\Findings::shape($base), \Lantern\Agent\Findings::shape(array_replace_recursive($base, ['meta' => ['fingerprint' => 'f2']])));
+        $this->assertSame('dup-key', \Lantern\Agent\Findings::shape(['type' => 'duplicate_query', 'key' => 'dup-key', 'call_site' => $base['call_site']]));
     }
 
     public function test_diff_ignores_timing_noise_and_threshold_findings(): void

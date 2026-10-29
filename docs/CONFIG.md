@@ -15,11 +15,17 @@ Published to `config/lantern.php` by `php artisan lantern:install`. Source of tr
 | `thresholds.memory_delta_mb` | `32` | `LANTERN_MEMORY_DELTA_MB` | Per-span memory growth that flags a memory hog. |
 | `thresholds.explain_min_ms` | `0` | `LANTERN_EXPLAIN_MIN_MS` | Query shapes slower than this are EXPLAIN candidates (when `explain` is on). The default `0` decides by plan, not by one run's timing, so a finding does not come and go between runs. |
 | `thresholds.max_issues_per_trace` | `50` | none | Cap on issues per trace. |
+| `thresholds.production_scan_rows` | `500000` | `LANTERN_PRODUCTION_SCAN_ROWS` | A full scan projected to read at least this many rows in production (from `production_row_counts` or the schema snapshot) is reported as `critical`. `0` turns the escalation off. |
 | `ignore_tables` | sessions, cache, cache_locks, jobs, job_batches, failed_jobs, migrations, password_reset_tokens | none | Queries whose primary table is listed are skipped by query detectors. |
 | `ignore_sql_patterns` | `[]` | none | Substring, or regex when starting with `/`; matching SQL is skipped. |
 | `detectors` | all six detector classes | none | Detector classes run on each finished trace (`NPlusOne`, `DuplicateQuery`, `SlowQuery`, `MemoryHog`, `MissingIndex`, `LazyLoad`). |
 | `explain` | `false` | `LANTERN_EXPLAIN` | Run EXPLAIN on slow queries to detect missing indexes. |
 | `explain_min_rows` | not set (`100`) | none | Optional, not in the published file. With `explain` on, scans estimated at this many rows or fewer are not reported as missing indexes. |
+| `plan_flip.factor` | `3` | `LANTERN_PLAN_FLIP_FACTOR` | `plan_flip` reports cost (time or estimated rows) that grows more than this many times faster than the `IN (...)` list. |
+| `plan_flip.min_ms` / `plan_flip.min_rows` | `10` / `1000` | `LANTERN_PLAN_FLIP_MIN_MS` / `LANTERN_PLAN_FLIP_MIN_ROWS` | The larger list size must take at least this long, or read at least this many estimated rows, to be reported. |
+| `plan_flip.refresh_minutes` | `60` | `LANTERN_PLAN_FLIP_REFRESH_MINUTES` | A shape and list size is re-EXPLAINed at most this often (needs `explain` and the database driver). |
+| `schema_snapshot` | `null` | `LANTERN_SCHEMA_SNAPSHOT` | Path to a production index snapshot made with `lantern:schema-snapshot`. Findings on tables whose indexes differ locally note it. |
+| `production_row_counts` | `[]` | none | Production row counts per table, for example `['orders' => 838776]`. Takes precedence over the snapshot's `row_counts`. |
 | `capture_bindings` | `null` (on only when `APP_ENV=local` in dev mode, off otherwise) | `LANTERN_CAPTURE_BINDINGS` | Record bound values on query spans. Bindings named password/token/secret, and values that look like emails, JWTs or API tokens, are always redacted. |
 | `binding_max_length` | `200` | none | Longer string bindings are truncated. |
 | `capture_normalized_sql` | `true` | none | Store the normalized SQL on query spans. |
@@ -40,7 +46,8 @@ Published to `config/lantern.php` by `php artisan lantern:install`. Source of tr
 | `diff.tolerance_pct` / `diff.tolerance_ms` | `20` / `5` | `LANTERN_DIFF_TOLERANCE_PCT` / `LANTERN_DIFF_TOLERANCE_MS` | `lantern:diff` calls a time change better or worse only beyond max(pct of before, ms). |
 | `keep_rate` | unset: `1` when `APP_ENV=local`, else `0.1` | `LANTERN_KEEP_RATE` | Probability of keeping a clean trace. Slow, 5xx, failed and issue-bearing traces are always kept. |
 | `storage.driver` | `memory` | `LANTERN_STORAGE_DRIVER` | `memory` or `database`. The dashboard and agent CLI need `database`. |
-| `storage.connection` | `null` | `LANTERN_DB_CONNECTION` | Connection for Lantern tables (default connection when null). |
+| `storage.connection` | `null` | `LANTERN_DB_CONNECTION` | Connection for the `lantern_*` tables. `null` follows the application's default connection, so pointing the app at another database (`DB_DATABASE=...`) moves Lantern with it and splits your traces. Set it explicitly to keep them in one place: `lantern` creates a dedicated SQLite file at `storage/lantern/lantern.sqlite` (run `php artisan migrate` afterwards), or name any connection from `config/database.php`. |
+| `app` | `null` | `LANTERN_APP` | Name stored on every trace and issue (`config('app.name')` when null). `lantern:issues`, `lantern:trace` and `lantern:check` show only the current app's rows (plus untagged older rows) unless `--app=` or `--all-apps` is passed. Run `php artisan migrate` after upgrading to add the column. |
 | `storage.compress` | `true` | `LANTERN_STORAGE_COMPRESS` | Gzip stored trace payloads. |
 | `storage.batch_size` | `1` | `LANTERN_STORAGE_BATCH_SIZE` | Traces buffered before a write (always flushed at request end). |
 | `path` | `lantern` | `LANTERN_PATH` | Dashboard URL prefix. |

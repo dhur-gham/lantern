@@ -27,8 +27,17 @@ class StatusCommand extends Command
         $driver = (string) config('lantern.storage.driver');
         $keep = config('lantern.keep_rate');
         $keep = $keep === null ? Sampler::defaultKeepRate() : (float) $keep;
+        $connection = config('lantern.storage.connection');
         $this->line('Storage: '.$driver);
+        if ($driver === 'database') {
+            $this->line('Storage connection: '.(is_string($connection) && $connection !== '' ? $connection : 'default ('.config('database.default').')'));
+            $this->line('App: '.(LanternServiceProvider::appName($this->laravel['config']) ?? 'none'));
+        }
         $this->line('Keep rate: '.$keep);
+
+        if ($enabled && $driver === 'database' && ! (is_string($connection) && $connection !== '')) {
+            $this->warn('LANTERN_DB_CONNECTION is not set: traces live in the application\'s default database and move with DB_CONNECTION/DB_DATABASE. Set LANTERN_DB_CONNECTION=lantern for a dedicated SQLite file (storage/lantern/lantern.sqlite), then run php artisan migrate.');
+        }
 
         if ($enabled && $driver !== 'database') {
             $this->warn('Storage driver is "'.$driver.'": traces are not persisted, so CLI reads find nothing. Set LANTERN_STORAGE_DRIVER=database.');

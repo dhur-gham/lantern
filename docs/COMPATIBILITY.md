@@ -39,5 +39,5 @@ Exercised on each tested database: migrations up and down, trace and issue stora
 ## Notes
 
 - Livewire 3 and 4 differ in the trailing arguments of their `call` hook. Lantern reads only the first two, so both behave the same.
-- Traces can be stored on any connection Laravel supports (`storage.connection`). The dashboard and agent CLI need `storage.driver` set to `database`.
+- Traces can be stored on any connection Laravel supports (`storage.connection`); `LANTERN_DB_CONNECTION=lantern` uses a dedicated SQLite file and needs `pdo_sqlite`. The dashboard and agent CLI need `storage.driver` set to `database`.
 - Laravel 11 currently resolves only to releases that Composer's security audit flags. Use the latest 11.x patch release, or Laravel 12.

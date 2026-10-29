@@ -22,6 +22,10 @@ final class LanternCheck extends LanternTool
     {
         return [
             'route' => $schema->string()->description('Only check traces for this route name or path'),
+            'path' => $schema->string()->description('Only check traces whose path matches (pattern)'),
+            'status' => $schema->string()->description('Only check traces with this status (404 or 5xx)'),
+            'app' => $schema->string()->description('Only check this app (default: the current app)'),
+            'all_apps' => $schema->boolean()->description('Check every app'),
             'max_queries' => $schema->integer()->description('Fail when a trace runs more queries than this')->min(0),
             'max_ms' => $schema->number()->description('Fail when a trace takes longer than this many ms')->min(0),
             'fail_on' => $schema->string()->description('Lowest issue severity that fails (default critical)')->enum(['critical', 'warning', 'info']),
@@ -41,6 +45,10 @@ final class LanternCheck extends LanternTool
     {
         return [
             'route' => 'nullable|string',
+            'path' => 'nullable|string',
+            'status' => 'nullable|string',
+            'app' => 'nullable|string',
+            'all_apps' => 'nullable|boolean',
             'max_queries' => 'nullable|integer|min:0',
             'max_ms' => 'nullable|numeric|min:0',
             'fail_on' => 'nullable|in:critical,warning,info',
@@ -54,7 +62,7 @@ final class LanternCheck extends LanternTool
     protected function parameters(array $input): array
     {
         return $this->options($input, [
-            'route' => 'route', 'max_queries' => 'max-queries', 'max_ms' => 'max-ms', 'fail_on' => 'fail-on',
+            'route' => 'route', 'path' => 'path', 'status' => 'status', 'app' => 'app', 'all_apps' => 'all-apps', 'max_queries' => 'max-queries', 'max_ms' => 'max-ms', 'fail_on' => 'fail-on',
             'no_new_issues' => 'no-new-issues', 'baseline' => 'baseline', 'since' => 'since', 'limit' => 'limit',
         ]);
     }

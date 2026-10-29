@@ -15,8 +15,14 @@ final class TraceCommand extends AgentCommand
 {
     protected $signature = 'lantern:trace
         {id? : Trace id (defaults to the latest)}
-        {--last : Latest trace}
+        {--last : Latest trace (the default; combine with the filters below)}
         {--slow : Slowest of the recent traces}
+        {--path= : Only traces whose path matches (Str::is pattern, e.g. api/otp/*)}
+        {--route= : Only traces whose route name matches (Str::is pattern)}
+        {--status= : Only traces with this status (404, or 5xx)}
+        {--since= : Only traces from a window (30m, 24h, 7d) or after a date}
+        {--app= : Only traces of this app (default: the current app)}
+        {--all-apps : Include traces of every app}
         {--summary : Totals, issues and the slowest query groups}
         {--tree : Span tree with repeated sibling queries collapsed}
         {--spans : Flat span list (slowest spans, recorded order)}
@@ -50,8 +56,16 @@ final class TraceCommand extends AgentCommand
             throw AgentException::usage('Pass either a trace id or --last, not both.');
         }
 
+        $filters = $this->scope();
+        if (($since = Reader::since($this->option('since'))) !== null) {
+            $filters['since'] = $since;
+        }
+        if ($this->argument('id') && ! in_array($this->argument('id'), ['last', 'latest'], true) && array_diff_key($filters, ['app' => 1]) !== []) {
+            throw AgentException::usage('Trace filters cannot be combined with a trace id.', 'Drop the id to pick the latest (or --slow) matching trace.');
+        }
+
         try {
-            $trace = $reader->trace($this->argument('id') ? (string) $this->argument('id') : null, (bool) $this->option('slow'));
+            $trace = $reader->trace($this->argument('id') ? (string) $this->argument('id') : null, (bool) $this->option('slow'), $filters);
         } catch (AgentException $e) {
             if ($legacy && $e->errorCode === AgentException::NO_DATA) {
                 $this->output->writeln('No traces recorded yet.');

@@ -22,6 +22,7 @@ return new class extends Migration
             $table->string('type', 32);
             $table->string('title', 500);
             $table->string('severity', 16);
+            $table->string('app', 100)->nullable()->index();
             $table->unsignedInteger('occurrences')->default(0);
             $table->unsignedBigInteger('count_total')->default(0);
             $table->double('total_ms')->default(0);

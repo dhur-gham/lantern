@@ -6,6 +6,7 @@ namespace Lantern\Storage;
 
 use Illuminate\Database\Connection;
 use Illuminate\Database\ConnectionResolverInterface;
+use Illuminate\Database\Query\Builder;
 use Lantern\Instrumentation\Query\QuerySuspend;
 
 final class TraceQueries
@@ -21,7 +22,10 @@ final class TraceQueries
     }
 
     /**
-     * @param array{status?: mixed, min_ms?: mixed, has_issues?: mixed, path?: mixed} $filters
+     * `path` (dashboard) is a substring match; `path_is` and `route_is` take Str::is style patterns where `*` is a
+     * wildcard. `app` keeps rows tagged with that app plus untagged (older) rows; `since` is a Carbon instance.
+     *
+     * @param array{status?: mixed, min_ms?: mixed, has_issues?: mixed, path?: mixed, path_is?: mixed, route_is?: mixed, since?: mixed, app?: mixed} $filters
      * @return list<array<string, mixed>>
      */
     public function traces(array $filters = [], int $limit = 50): array
@@ -29,12 +33,7 @@ final class TraceQueries
         return QuerySuspend::run(function () use ($filters, $limit): array {
             $q = $this->conn()->table('lantern_traces')->select(self::LIST_COLUMNS);
 
-            if (($filters['status'] ?? '') !== '') {
-                $status = (string) $filters['status'];
-                preg_match('/^[1-5]xx$/i', $status) === 1
-                    ? $q->where('status', 'like', $status[0].'%')
-                    : $q->where('status', $status);
-            }
+            $this->traceFilters($q, $filters);
             if (($filters['min_ms'] ?? '') !== '') {
                 $q->where('duration_ms', '>=', (int) $filters['min_ms']);
             }
@@ -48,6 +47,44 @@ final class TraceQueries
             return $q->orderByDesc('started_at')->limit($this->limit($limit))->get()
                 ->map(fn ($r): array => $this->withIsoDates((array) $r))->all();
         });
+    }
+
+    /** @param array<string, mixed> $filters */
+    private function traceFilters(Builder $q, array $filters): void
+    {
+        if (($filters['status'] ?? '') !== '') {
+            $status = (string) $filters['status'];
+            preg_match('/^[1-5]xx$/i', $status) === 1
+                ? $q->where('status', 'like', $status[0].'%')
+                : $q->where('status', $status);
+        }
+        if (($filters['path_is'] ?? '') !== '') {
+            $pattern = (string) $filters['path_is'];
+            $this->wildcard($q, 'path', $pattern[0] === '*' ? $pattern : '/'.ltrim($pattern, '/'));
+        }
+        if (($filters['route_is'] ?? '') !== '') {
+            $this->wildcard($q, 'route', (string) $filters['route_is']);
+        }
+        if (($filters['since'] ?? null) instanceof \DateTimeInterface) {
+            $q->where('started_at', '>=', $filters['since']->format('Y-m-d H:i:s'));
+        }
+        $this->appFilter($q, $filters);
+    }
+
+    /** @param array<string, mixed> $filters */
+    private function appFilter(Builder $q, array $filters): void
+    {
+        if (($filters['app'] ?? '') !== '') {
+            $app = (string) $filters['app'];
+            $q->where(fn (Builder $w) => $w->where('app', $app)->orWhereNull('app'));
+        }
+    }
+
+    /** Str::is semantics: `*` matches anything, everything else is literal. */
+    private function wildcard(Builder $q, string $column, string $pattern): void
+    {
+        $like = str_replace(['!', '%', '_', '*'], ['!!', '!%', '!_', '%'], $pattern);
+        $q->whereRaw($q->getGrammar()->wrap($column)." like ? escape '!'", [$like]);
     }
 
     /** @return array<string, mixed>|null */
@@ -74,7 +111,9 @@ final class TraceQueries
     }
 
     /**
-     * @param array{type?: mixed, severity?: mixed, sort?: mixed} $filters
+     * `path_is`, `route_is` and `status` narrow to issues whose latest trace matches; `app` as for traces.
+     *
+     * @param array{type?: mixed, severity?: mixed, sort?: mixed, path_is?: mixed, route_is?: mixed, status?: mixed, app?: mixed} $filters
      * @return list<array<string, mixed>>
      */
     public function issues(array $filters = [], int $limit = 50): array
@@ -88,6 +127,14 @@ final class TraceQueries
             if (($filters['severity'] ?? '') !== '') {
                 $q->where('severity', (string) $filters['severity']);
             }
+            $viaTrace = array_intersect_key($filters, array_flip(['path_is', 'route_is', 'status']));
+            if (array_filter($viaTrace, fn ($v) => $v !== null && $v !== '') !== []) {
+                $q->whereIn('last_trace_id', function (Builder $sub) use ($viaTrace): void {
+                    $sub->select('id')->from('lantern_traces');
+                    $this->traceFilters($sub, $viaTrace);
+                });
+            }
+            $this->appFilter($q, $filters);
             $sort = in_array($filters['sort'] ?? null, self::ISSUE_SORTS, true) ? $filters['sort'] : 'total_ms';
 
             return $q->orderByDesc($sort)->limit($this->limit($limit))->get()

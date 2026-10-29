@@ -107,6 +107,7 @@ final class Reader
             $meta = (array) ($i['meta'] ?? []);
             $evidence['avg_ms'] = isset($meta['avg_ms']) ? round((float) $meta['avg_ms'], 2) : null;
             $evidence['parent'] = $meta['parent'] ?? null;
+            $evidence += self::planEvidence($meta);
             $sample = $meta['sample_sql'] ?? null;
             $ids = array_map('intval', (array) ($i['span_ids'] ?? []));
             $node = $ids === [] ? null : $this->findNode($trace['tree'] ?? null, $ids);
@@ -126,6 +127,35 @@ final class Reader
         }
 
         return $evidence;
+    }
+
+    /**
+     * Plan-derived fields of an issue's meta; each is present only when known. `read_ratio` is rows read per row
+     * returned and needs an actual returned count.
+     *
+     * @param array<string, mixed> $meta
+     * @return array<string, mixed>
+     */
+    private static function planEvidence(array $meta): array
+    {
+        $out = [];
+        if (isset($meta['rows_read']) && is_numeric($meta['rows_read'])) {
+            $out['rows_read'] = (int) $meta['rows_read'];
+            if (isset($meta['rows_returned']) && is_numeric($meta['rows_returned']) && (int) $meta['rows_returned'] > 0) {
+                $out['rows_returned'] = (int) $meta['rows_returned'];
+                $out['read_ratio'] = round($out['rows_read'] / $out['rows_returned'], 1);
+            }
+        }
+        foreach (['tables', 'projected'] as $key) {
+            if (is_array($meta[$key] ?? null) && $meta[$key] !== []) {
+                $out[$key] = $meta[$key];
+            }
+        }
+        if (is_string($meta['schema_note'] ?? null) && $meta['schema_note'] !== '') {
+            $out['schema_note'] = $meta['schema_note'];
+        }
+
+        return $out;
     }
 
     /**
@@ -150,13 +180,25 @@ final class Reader
         return null;
     }
 
-    /** Resolves an id, 'last', or the slowest of the recent traces. */
-    public function trace(?string $id, bool $slow = false): array
+    /**
+     * Resolves an id, 'last', or the slowest of the recent traces. `$filters` narrow the latest/slowest lookup.
+     *
+     * @param array<string, mixed> $filters
+     */
+    public function trace(?string $id, bool $slow = false, array $filters = []): array
     {
         if ($id === null || $id === '' || $id === 'last' || $id === 'latest') {
-            $rows = $this->queries->traces([], $slow ? 100 : 1);
+            $rows = $this->queries->traces($filters, $slow ? 100 : 1);
             if ($rows === []) {
-                throw AgentException::noData('No traces recorded yet.', 'Make a request with LANTERN_ENABLED=true and LANTERN_STORAGE_DRIVER=database.');
+                $narrowed = array_diff_key($filters, ['app' => 1]) !== [];
+                throw AgentException::noData(
+                    $narrowed ? 'No traces match these filters.' : 'No traces recorded yet.',
+                    $narrowed
+                        ? 'Loosen --path, --route, --status or --since, or pass --all-apps to include other apps.'
+                        : (isset($filters['app'])
+                            ? 'No traces for app "'.$filters['app'].'". Pass --all-apps to include other apps, or make a request with LANTERN_ENABLED=true and LANTERN_STORAGE_DRIVER=database.'
+                            : 'Make a request with LANTERN_ENABLED=true and LANTERN_STORAGE_DRIVER=database.'),
+                );
             }
             if ($slow) {
                 usort($rows, fn (array $a, array $b): int => ($b['duration_ms'] ?? 0) <=> ($a['duration_ms'] ?? 0));
@@ -213,9 +255,15 @@ final class Reader
         $nodes = $this->flatNodes($trace['tree'] ?? null);
         $queryNodes = array_filter($nodes, fn (array $n): bool => ($n['type'] ?? '') === 'query' && (($n['meta']['kind'] ?? null) !== 'transaction'));
         $issueBySpan = [];
+        $planByIssue = [];
         foreach ((array) ($trace['issues'] ?? []) as $i) {
+            $key = Findings::keyOf((array) $i);
+            $plan = array_intersect_key(self::planEvidence((array) ($i['meta'] ?? [])), ['rows_read' => 1, 'read_ratio' => 1]);
+            if ($plan !== []) {
+                $planByIssue[$key] = $plan;
+            }
             foreach ((array) ($i['span_ids'] ?? []) as $sid) {
-                $issueBySpan[(int) $sid] = Findings::keyOf((array) $i);
+                $issueBySpan[(int) $sid] = $key;
             }
         }
 
@@ -232,7 +280,10 @@ final class Reader
             }
         }
         $groups = array_values($groups);
-        usort($groups, fn (array $a, array $b): int => $b['total_ms'] <=> $a['total_ms']);
+        foreach ($groups as $n => $g) {
+            $groups[$n] += $planByIssue[$g['issue_id'] ?? ''] ?? [];
+        }
+        usort($groups, fn (array $a, array $b): int => [$b['total_ms'], $b['rows_read'] ?? 0] <=> [$a['total_ms'], $a['rows_read'] ?? 0]);
         $groupCount = count($groups);
         $groups = array_map(function (array $g): array {
             $g['total_ms'] = round($g['total_ms'], 2);
@@ -241,7 +292,7 @@ final class Reader
         }, array_slice($groups, 0, $top));
 
         $queryCount = isset($trace['query_count']) ? (int) $trace['query_count'] : count($queryNodes);
-        $findings = $this->traceFindings($trace);
+        $findings = array_map(fn (array $f): array => $f + ($planByIssue[$f['id']] ?? []), $this->traceFindings($trace));
         $summary = [
             'schema_version' => Findings::VERSION,
             'schema' => 'lantern.trace.summary',

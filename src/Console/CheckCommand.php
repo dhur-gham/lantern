@@ -19,6 +19,10 @@ final class CheckCommand extends AgentCommand
         {--baseline= : JSON file of accepted issue ids}
         {--write-baseline= : Write the current issue ids to this file and exit 0}
         {--route= : Only check traces for this route name or path (and their issues)}
+        {--path= : Only check traces whose path matches (Str::is pattern)}
+        {--status= : Only check traces with this status (404, or 5xx)}
+        {--app= : Only check this app (default: the current app)}
+        {--all-apps : Check every app}
         {--since= : Only check traces and issues from this window (30m, 24h, 7d) or date}
         {--traces=50 : Max recent traces to inspect}
         {--limit=20 : Max violations listed}
@@ -38,7 +42,8 @@ final class CheckCommand extends AgentCommand
         $since = Reader::since($this->option('since'));
         $route = $this->option('route') ?: null;
 
-        $traces = $reader->traces([], $this->intOption('traces', (int) config('lantern.check.traces', 50), 1));
+        $scope = $this->scope(false);
+        $traces = $reader->traces($scope, $this->intOption('traces', (int) config('lantern.check.traces', 50), 1));
         if ($route !== null) {
             $needle = ltrim((string) $route, '/');
             $traces = array_values(array_filter($traces, fn (array $t): bool => ($t['route'] ?? null) === $route || ltrim((string) ($t['path'] ?? ''), '/') === $needle));
@@ -47,7 +52,7 @@ final class CheckCommand extends AgentCommand
             $traces = array_values(array_filter($traces, fn (array $t): bool => \Illuminate\Support\Carbon::parse($t['started_at'])->greaterThanOrEqualTo($since)));
         }
 
-        $issues = $this->scopedIssues($reader, $traces, $route !== null, $since);
+        $issues = $this->scopedIssues($reader, $traces, $route !== null || isset($scope['path_is']) || isset($scope['status']), $since, $scope);
 
         if ($traces === [] && $issues === []) {
             throw AgentException::noData(
@@ -107,7 +112,7 @@ final class CheckCommand extends AgentCommand
                 'no_new_issues' => $noNew,
                 'baseline' => $this->option('baseline') ?: null,
             ], fn ($v) => $v !== null),
-            'scope' => array_filter(['route' => $route, 'since' => $this->option('since') ?: null, 'traces_checked' => count($traces), 'issues_checked' => count($issues)], fn ($v) => $v !== null),
+            'scope' => array_filter(['route' => $route, 'path' => $scope['path_is'] ?? null, 'status' => $scope['status'] ?? null, 'since' => $this->option('since') ?: null, 'traces_checked' => count($traces), 'issues_checked' => count($issues)], fn ($v) => $v !== null),
             'violation_count' => count($violations),
             'truncated' => count($violations) > count($shown),
             'violations' => $shown,
@@ -180,9 +185,10 @@ final class CheckCommand extends AgentCommand
 
     /**
      * @param list<array<string, mixed>> $traces
+     * @param array<string, mixed> $scope
      * @return list<array<string, mixed>>
      */
-    private function scopedIssues(Reader $reader, array $traces, bool $byTraces, ?\Illuminate\Support\Carbon $since): array
+    private function scopedIssues(Reader $reader, array $traces, bool $byTraces, ?\Illuminate\Support\Carbon $since, array $scope = []): array
     {
         if ($byTraces) {
             $out = [];
@@ -196,7 +202,7 @@ final class CheckCommand extends AgentCommand
             return array_values($out);
         }
 
-        [$findings] = $reader->issuesPage([], Reader::MAX_ROWS, 0, $since);
+        [$findings] = $reader->issuesPage(array_intersect_key($scope, ['app' => 1]), Reader::MAX_ROWS, 0, $since);
 
         return $findings;
     }
