@@ -22,10 +22,23 @@ final class Pruner
         $issueDays ??= (int) config('lantern.retention.issues_days', 30);
         $db = $this->connection();
 
+        if (! $dryRun) {
+            $this->purgePlanSamples($db, now()->subDays($traceDays)->toDateTimeString());
+        }
+
         return [
             'traces' => $this->purge($db, 'lantern_traces', 'id', 'started_at', now()->subDays($traceDays)->toDateTimeString(), $dryRun),
             'issues' => $this->purge($db, 'lantern_issues', 'issue_key', 'last_seen', now()->subDays($issueDays)->toDateTimeString(), $dryRun),
         ];
+    }
+
+    /** Plan samples follow trace retention; the table is absent until its migration has run. */
+    private function purgePlanSamples(ConnectionInterface $db, string $cutoff): void
+    {
+        try {
+            $db->table('lantern_plan_samples')->where('updated_at', '<', $cutoff)->delete();
+        } catch (\Throwable) {
+        }
     }
 
     private function connection(): ConnectionInterface

@@ -207,6 +207,7 @@ Query counts went from 152 to 4. Timings are from one machine and one run (SQLit
 | `duplicate_query` | Identical SQL and bindings run more than once in a trace | Call sites, count | Bindings captured (`capture_bindings`, on by default in dev mode) | Without bindings it cannot tell duplicates from different parameters, so it skips them |
 | `slow_query` | Queries over the threshold (default 100 ms) | Time, count, max, call site | Nothing | Time is what the database connection reports |
 | `missing_index` | A SELECT that `EXPLAIN` plans as a full scan on a filtered column | Plan summary, suggested columns | `LANTERN_EXPLAIN=true`; MySQL, MariaDB, PostgreSQL or SQLite | Opt-in; SELECT only; the suggested index is a starting point and depends on your data |
+| `plan_flip` | An `IN (...)` query whose plan changes, or whose cost outgrows the list, as the list gets longer | Plan before and after, sizes, time and estimated rows | `LANTERN_EXPLAIN=true`; database storage driver for comparison across requests | Opt-in; SELECT only; `lantern:probe` re-checks the plan at chosen list sizes |
 | `memory_hog` | A span that grows memory sharply (default 32 MB), or an unbounded SELECT followed by growth | Span, memory delta, call site | Nothing | The first request after a cold start can show autoload memory at very low thresholds |
 
 Details, thresholds, severities and fixes for each are in [docs/DETECTORS.md](docs/DETECTORS.md).
@@ -248,7 +249,10 @@ php artisan migrate
 # 3. Enable it (off by default)
 LANTERN_ENABLED=true
 LANTERN_STORAGE_DRIVER=database    # needed for the dashboard, the CLI and issue history
+LANTERN_DB_CONNECTION=lantern      # recommended: keep traces in storage/lantern/lantern.sqlite, independent of DB_DATABASE
 ```
+
+`LANTERN_DB_CONNECTION` decides where the `lantern_*` tables live. Left unset they follow the application's default connection, so switching `DB_DATABASE` (a benchmark database, a test copy) silently moves Lantern to a database without the tables and splits your traces. Set it to `lantern` for a dedicated SQLite file created on demand (run `php artisan migrate` after setting it), or to any connection name from `config/database.php`. If several apps share one database, each trace and issue is tagged with `LANTERN_APP` (default `APP_NAME`) and the CLI shows only the current app unless you pass `--all-apps`.
 
 4. **Reproduce an issue.** Open a page or endpoint that loops over records and touches relations.
 5. **Run your first diagnostic.**
@@ -281,11 +285,15 @@ php artisan lantern:issues --format=json --limit=5   # ranked findings
 php artisan lantern:issue <id> --format=json         # one finding with redacted evidence
 php artisan lantern:trace --last --summary           # totals, issues, slowest query groups (views: --summary, --tree, --spans)
 php artisan lantern:trace --slow --summary           # the slowest of the 100 most recent traces (ignores --last)
+php artisan lantern:trace --path='api/otp/*' --summary   # latest trace matching a path (also --route, --status, --since)
+php artisan lantern:issues --path='api/otp/*' --status=5xx   # issues whose latest trace matches
 php artisan lantern:diff <before> last               # resolved and new issues, query deltas
 php artisan lantern:check --route=/posts             # pass/fail gate
 php artisan lantern:status                           # state and detected framework versions
 php artisan lantern:prune --dry-run                  # retention cleanup (--days, --issues-days)
 ```
+
+Filters: `lantern:trace` and `lantern:issues` accept `--path=` and `--route=` (`Str::is` patterns, `*` is a wildcard; a path may omit the leading slash), `--status=` (`404` or `5xx`) and `--since=`; `lantern:check` accepts `--path`, `--status` and `--since`. On `lantern:trace` they choose which trace is "last" (or "slowest"); on `lantern:issues` they match each issue's latest trace. `--app=name` and `--all-apps` choose which app's rows are read (default: the current app; rows written before the app column existed always match).
 
 Notes: `last` is the most recent trace of any kind, so a queue job or command that ran after your page load can be "last" (common helpers such as `migrate`, `tinker` and `lantern:*` are ignored by default; see `ignore_commands`). Without a view flag, `lantern:trace` prints a tree limited to depth 6 (`--depth` changes it).
 

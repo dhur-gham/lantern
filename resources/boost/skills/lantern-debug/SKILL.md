@@ -6,11 +6,11 @@ description: Debug slow Laravel requests and query problems (N+1, lazy loading, 
 # Lantern debugging workflow
 
 1. Enable: `LANTERN_ENABLED=true` and `LANTERN_STORAGE_DRIVER=database` locally (then migrate). Never in production without sampling.
-2. Reproduce with a feature test or a real request to the route. Seed >= 3 related rows.
+2. Reproduce with a feature test or a real request to the route. Seed >= 3 related rows. To pick that request's trace rather than the latest one, filter: `lantern:trace --path='api/x/*' --summary --format=json` (also `--route`, `--status`, `--since`); `lantern:issues` takes the same filters. Rows from other apps sharing the database are hidden unless you pass `--all-apps`.
 3. `php artisan lantern:issues --format=json --limit=5`. Pick one issue; note `evidence.trace_id` from `lantern:issue` (or `related_trace_ids[0]`) as BEFORE.
 4. `php artisan lantern:issue {id} --format=json`; open `call_site.file` at `call_site.line`.
 5. Fix using the pattern below. Prefer fixing the query over any config change.
-6. Re-run the reproduction, then `php artisan lantern:diff {before} {after}`: expect the issue in `resolved`, `new` empty, `queries.delta` negative.
+6. Re-run the reproduction, then `php artisan lantern:diff {before} {after}`: expect the issue in `resolved` (or in `changed` with status `improved` when reduced but still present, even if its line moved), `new` empty, `queries.delta` negative.
 7. `php artisan lantern:check --route=/posts --no-new-issues`: exit 0 means done, 1 means still failing, 3 means nothing recorded (check the env flags).
 
 Always pass `--format=json` (the default table is large). Each result has `next`, the suggested follow-up command; `hint` explains empty or truncated results. With the `lantern` MCP server (`php artisan mcp:start lantern`) call `lantern_issues`, `lantern_issue`, `lantern_trace_summary`, `lantern_diff`, `lantern_check` instead; same JSON, same steps.
@@ -64,6 +64,14 @@ Schema::table('comments', function (Blueprint $t) {
 ```
 
 Put equality columns first, then range/sort columns.
+
+## index_not_chosen
+
+An index that could serve the query already exists (`evidence` names it) and the optimizer did not use it. Do not write a migration. Read `evidence.rows_read` and `evidence.projected` to see how bad the scan is at production size, run `EXPLAIN ANALYZE`, then refresh statistics (`ANALYZE TABLE`) or pin the join order with a hint. If `evidence.schema_note` is present the local database lacks production indexes: run `php artisan lantern:schema-diff prod-schema.json` and load the missing ones locally before measuring again.
+
+## plan_flip
+
+The query is fast with a short `whereIn()` list and slow with a long one because the optimizer changes plan. Do not add an index blindly: run `php artisan lantern:probe {id} --in-sizes=1,7,20,41,100` and read `plan_changes`, then refresh statistics (`ANALYZE TABLE`), pin the join order with a hint, or process the ids in chunks below the size where the plan changes.
 
 ## memory_hog
 

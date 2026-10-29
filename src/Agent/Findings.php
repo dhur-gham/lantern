@@ -49,6 +49,7 @@ final class Findings
     {
         return [
             'id' => self::keyOf($i),
+            'shape' => self::shape($i),
             'type' => (string) ($i['type'] ?? ''),
             'severity' => (string) ($i['severity'] ?? ''),
             'title' => (string) ($i['title'] ?? ''),
@@ -56,6 +57,30 @@ final class Findings
             'count' => (int) ($i['count'] ?? $i['count_total'] ?? 0),
             'total_ms' => round((float) ($i['total_ms'] ?? 0), 2),
         ];
+    }
+
+    /**
+     * Identity of a finding that survives edits to the surrounding file: the SQL fingerprint (or model and
+     * relation) plus the call-site file and function, never the line. Types whose id is already line independent
+     * use the id.
+     *
+     * @param array<string, mixed> $i
+     */
+    public static function shape(array $i): string
+    {
+        $type = (string) ($i['type'] ?? '');
+        $meta = (array) ($i['meta'] ?? []);
+        $site = self::site($i['call_site'] ?? null);
+        $where = $site === null ? '-' : $site['file'].'#'.($site['function'] ?? '');
+
+        $parts = match (true) {
+            in_array($type, [Issue::TYPE_N_PLUS_ONE, Issue::TYPE_SLOW], true) && is_string($meta['fingerprint'] ?? null) && $meta['fingerprint'] !== '' => [$meta['fingerprint']],
+            $type === Issue::TYPE_LAZY_LOAD && isset($meta['model'], $meta['relation']) => [(string) $meta['model'], (string) $meta['relation']],
+            $type === Issue::TYPE_MEMORY => [(string) ($meta['span_type'] ?? ''), preg_replace('/\+[\d.]+ MB/', '', (string) ($i['title'] ?? ''))],
+            default => null,
+        };
+
+        return $parts === null ? self::keyOf($i) : Issue::key($type, ...[...$parts, $where]);
     }
 
     /** @param array<string, mixed> $i */

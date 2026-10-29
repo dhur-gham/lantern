@@ -120,9 +120,10 @@ final class SetupCommandsTest extends TestCase
         $this->assertSame([database_path('migrations')], array_values($paths));
 
         $source = (string) array_key_first($paths);
-        $this->assertSame(
-            ['2024_01_01_000001_create_lantern_traces_table.php', '2024_01_01_000002_create_lantern_issues_table.php'],
-            array_values(array_diff((array) scandir($source), ['.', '..'])),
-        );
+        $published = array_values(array_diff((array) scandir($source), ['.', '..']));
+        foreach (['2024_01_01_000001_create_lantern_traces_table.php', '2024_01_01_000002_create_lantern_issues_table.php', '2024_01_01_000003_add_app_to_lantern_tables.php'] as $file) {
+            $this->assertContains($file, $published);
+        }
+        $this->assertSame([], array_filter($published, fn (string $f): bool => ! str_ends_with($f, '.php')));
     }
 }

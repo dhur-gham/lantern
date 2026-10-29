@@ -5,7 +5,7 @@ Lantern gives agents machine-readable performance findings and a way to prove a 
 ## Setup
 
 1. Install the package as a dev dependency, then `php artisan lantern:install` and `php artisan migrate`.
-2. In `.env`: `LANTERN_ENABLED=true` and `LANTERN_STORAGE_DRIVER=database`. The agent commands exit 2 without the database driver. Keep Lantern off in production, or use sampling (`docs/CONFIG.md`).
+2. In `.env`: `LANTERN_ENABLED=true` and `LANTERN_STORAGE_DRIVER=database`. The agent commands exit 2 without the database driver. Keep Lantern off in production, or use sampling (`docs/CONFIG.md`). Set `LANTERN_DB_CONNECTION=lantern` so traces survive switching `DB_DATABASE`.
 3. To record every request while reproducing locally, set `LANTERN_KEEP_RATE=1`.
 
 ## The loop
@@ -14,8 +14,12 @@ Lantern gives agents machine-readable performance findings and a way to prove a 
 2. `php artisan lantern:issues --format=json --limit=10`. Each issue has a stable `id`, `type`, `severity` and `call_site.file`/`line`.
 3. `php artisan lantern:issue {id} --format=json`. `evidence.trace_id` is the BEFORE trace; `evidence.sql_shape` is the normalized SQL.
 4. Fix the call site (eager load, index, `select()`, chunking).
-5. Re-run the reproduction, then `php artisan lantern:diff {before} last`. Expect the issue in `resolved`, `new` empty and verdict `improved`.
+5. Re-run the reproduction, then `php artisan lantern:diff {before} last`. Expect the issue in `resolved` (or in `changed` with status `improved` when it is reduced but still present, even if its line moved), `new` empty and verdict `improved`.
 6. `php artisan lantern:check --route=<name or path> --no-new-issues` is the gate.
+3a. For `missing_index` and `index_not_chosen`, read `evidence.rows_read` (and `read_ratio` when present), `evidence.projected` (the scan's size here against production) and `evidence.schema_note`. An `index_not_chosen` finding names an index that already exists: do not write a migration for it. A `schema_note` means the local database lacks production indexes, so compare with `php artisan lantern:schema-diff prod-schema.json` (snapshot made with `lantern:schema-snapshot` where production is reachable, path in `LANTERN_SCHEMA_SNAPSHOT`) before trusting local timings.
+7. For a `plan_flip` finding (fast with a short `whereIn()` list, slow with a long one), `php artisan lantern:probe {id} --in-sizes=1,7,20,41,100` shows where the plan changes.
+
+To target one endpoint, filter instead of guessing the latest trace: `lantern:trace --path='api/otp/*' --summary --format=json` (also `--route`, `--status`, `--since`) and `lantern:issues --path=... --format=json`. Only the current app's rows are read; add `--all-apps` when several apps share the database.
 
 Always pass `--format=json`; the default table is larger and meant for humans. Results carry `next` (suggested next command) and `hint` (empty or truncated results). When `truncated` is true use `next_offset`.
 
@@ -46,7 +50,7 @@ Lantern registers a local server named `lantern` automatically when `laravel/mcp
 }
 ```
 
-Run it from the app root with the same `.env` flags. Tools (read-only): `lantern_issues` (`type severity sort since limit offset full`), `lantern_issue` (`id`), `lantern_trace_summary` (`trace_id slow limit`), `lantern_diff` (`before after`), `lantern_check` (`route max_queries max_ms fail_on no_new_issues baseline since limit`). Each returns the same JSON as the matching command. Errors come back with `isError: true` and the JSON error object; a failing check is a normal result with `pass: false`. `next` and `hint` name the matching tool.
+Run it from the app root with the same `.env` flags. Tools (read-only): `lantern_issues` (`type severity sort since path route status app all_apps limit offset full`), `lantern_issue` (`id`), `lantern_trace_summary` (`trace_id slow path route status since app all_apps limit`), `lantern_diff` (`before after`), `lantern_check` (`route path status app all_apps max_queries max_ms fail_on no_new_issues baseline since limit`). Each returns the same JSON as the matching command. Errors come back with `isError: true` and the JSON error object; a failing check is a normal result with `pass: false`. `next` and `hint` name the matching tool.
 
 ## Laravel Boost
 

@@ -24,6 +24,9 @@ return [
         // Queries slower than this are candidates for EXPLAIN (when 'explain' is on).
         'explain_min_ms' => (float) env('LANTERN_EXPLAIN_MIN_MS', 0),
         'max_issues_per_trace' => 50,
+        // A full scan projected (from production_row_counts or the schema snapshot) to read at least this many rows in
+        // production is reported as critical. 0 turns the escalation off.
+        'production_scan_rows' => (int) env('LANTERN_PRODUCTION_SCAN_ROWS', 500000),
     ],
 
     // Framework plumbing that N+1, duplicate, slow-query and missing-index detection skips. A query is skipped when
@@ -39,11 +42,29 @@ return [
         \Lantern\Detection\Detectors\SlowQueryDetector::class,
         \Lantern\Detection\Detectors\MemoryHogDetector::class,
         \Lantern\Detection\Detectors\MissingIndexDetector::class,
+        \Lantern\Detection\Detectors\PlanFlipDetector::class,
         \Lantern\Detection\Detectors\LazyLoadDetector::class,
     ],
 
     // Run EXPLAIN on slow queries to detect missing indexes.
     'explain' => env('LANTERN_EXPLAIN', false),
+
+    // plan_flip (needs 'explain'): a plan change or cost growth between IN-list sizes is reported when the larger size
+    // takes at least min_ms or reads at least min_rows, and cost grows more than `factor` times faster than the list.
+    // Each size is re-EXPLAINed at most every refresh_minutes.
+    'plan_flip' => [
+        'factor' => (float) env('LANTERN_PLAN_FLIP_FACTOR', 3),
+        'min_ms' => (float) env('LANTERN_PLAN_FLIP_MIN_MS', 10),
+        'min_rows' => (int) env('LANTERN_PLAN_FLIP_MIN_ROWS', 1000),
+        'refresh_minutes' => (int) env('LANTERN_PLAN_FLIP_REFRESH_MINUTES', 60),
+    ],
+
+    // Path to a production index snapshot (php artisan lantern:schema-snapshot > prod-schema.json). When set,
+    // findings on tables whose indexes differ locally say so.
+    'schema_snapshot' => env('LANTERN_SCHEMA_SNAPSHOT'),
+
+    // Production row counts per table, used to project scans, e.g. ['orders' => 838776]. Overrides the snapshot's.
+    'production_row_counts' => [],
 
     // Record bound values on query spans. null = on in dev mode, off otherwise.
     // Named bindings called password/token/secret are always redacted.
@@ -106,9 +127,16 @@ return [
     // null: keep every clean trace in the local environment, 0.1 elsewhere.
     'keep_rate' => env('LANTERN_KEEP_RATE'),
 
+    // Name stored on every trace and issue so apps sharing one database can be told apart; the CLI shows only the
+    // current app unless --all-apps is passed. null = config('app.name').
+    'app' => env('LANTERN_APP'),
+
     'storage' => [
         // memory | database
         'driver' => env('LANTERN_STORAGE_DRIVER', 'memory'),
+        // Connection for the lantern_* tables. null follows the application's default connection (and so DB_DATABASE).
+        // Set LANTERN_DB_CONNECTION=lantern to use a dedicated SQLite file at storage/lantern/lantern.sqlite
+        // (created on demand; run php artisan migrate afterwards), or name any connection from config/database.php.
         'connection' => env('LANTERN_DB_CONNECTION'),
         'compress' => env('LANTERN_STORAGE_COMPRESS', true),
         // Traces buffered before a write (flushed at the end of the request regardless).

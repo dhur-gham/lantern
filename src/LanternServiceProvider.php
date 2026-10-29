@@ -33,6 +33,9 @@ class LanternServiceProvider extends ServiceProvider
         $this->mergeConfigFrom(__DIR__.'/../config/lantern.php', 'lantern');
         $this->ignoreOwnPath();
 
+        // Readers (CLI, MCP, dashboard) use the configured storage connection even while tracing is off.
+        $this->app->singleton(TraceQueries::class, fn ($app) => new TraceQueries($app['db'], $app['config']->get('lantern.storage.connection')));
+
         if (! $this->tracingEnabled()) {
             return;
         }
@@ -54,6 +57,7 @@ class LanternServiceProvider extends ServiceProvider
             $app['db'],
             $app['config']->get('lantern.storage.connection'),
             (bool) $app['config']->get('lantern.storage.compress', false),
+            self::appName($app['config']),
         ));
         $this->app->singleton(TraceSink::class, function ($app) {
             $config = $app['config'];
@@ -110,6 +114,7 @@ class LanternServiceProvider extends ServiceProvider
 
     public function boot(): void
     {
+        $this->registerStorageConnection();
         $this->loadMigrationsFrom(__DIR__.'/../database/migrations');
         $this->loadViewsFrom(__DIR__.'/../resources/views', 'lantern');
         $this->registerRoutes();
@@ -135,6 +140,45 @@ class LanternServiceProvider extends ServiceProvider
         }
     }
 
+    /** Name stored on each trace and issue: `lantern.app`, else `app.name`. */
+    public static function appName(\Illuminate\Contracts\Config\Repository $config): ?string
+    {
+        $name = $config->get('lantern.app') ?: $config->get('app.name');
+
+        return is_string($name) && $name !== '' ? $name : null;
+    }
+
+    /**
+     * `LANTERN_DB_CONNECTION=lantern` without a connection of that name gets a dedicated SQLite file, so traces
+     * stay put when the application's own database settings change. Failures are swallowed: storage then reports
+     * its own error when read or written.
+     */
+    private function registerStorageConnection(): void
+    {
+        $config = $this->app['config'];
+        if ($config->get('lantern.storage.connection') !== 'lantern' || $config->get('database.connections.lantern') !== null) {
+            return;
+        }
+
+        try {
+            $dir = storage_path('lantern');
+            $file = $dir.DIRECTORY_SEPARATOR.'lantern.sqlite';
+            if (! is_dir($dir)) {
+                @mkdir($dir, 0775, true);
+            }
+            if (! is_file($file)) {
+                @touch($file);
+            }
+            $config->set('database.connections.lantern', [
+                'driver' => 'sqlite',
+                'database' => $file,
+                'prefix' => '',
+                'foreign_key_constraints' => false,
+            ]);
+        } catch (\Throwable) {
+        }
+    }
+
     private function ignoreOwnPath(): void
     {
         $config = $this->app['config'];
@@ -153,8 +197,6 @@ class LanternServiceProvider extends ServiceProvider
         if (! $this->tracingEnabled() || $this->app->routesAreCached()) {
             return;
         }
-
-        $this->app->singleton(TraceQueries::class, fn ($app) => new TraceQueries($app['db'], $app['config']->get('lantern.storage.connection')));
 
         $config = $this->app['config'];
         \Illuminate\Support\Facades\Route::group([

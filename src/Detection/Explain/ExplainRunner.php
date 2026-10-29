@@ -19,15 +19,18 @@ use Throwable;
  * Safe by construction: only statements starting with SELECT are explained, never ANALYZE, and every failure
  * (unknown connection, driver, syntax, missing table) yields null instead of an exception.
  */
-final class ExplainRunner
+final class ExplainRunner implements PlanSource
 {
     public function __construct(private readonly ?DatabaseManager $db = null)
     {
     }
 
     /**
+     * `tables` lists every real table in the plan (derived tables left out) with its estimated rows, chosen key
+     * and access type (`ALL` is a full scan); `table`/`rows`/`key` describe the one the detectors act on.
+     *
      * @param  array<int|string, mixed>  $bindings
-     * @return array{full_scan: bool, table: ?string, rows: ?int, key: ?string, possible_keys: ?string, raw: mixed}|null
+     * @return array{full_scan: bool, table: ?string, rows: ?int, key: ?string, possible_keys: ?string, tables: list<array{table: string, alias: ?string, rows: ?int, key: ?string, type: ?string, possible_keys: ?string}>, raw: mixed}|null
      */
     public function explain(?string $connectionName, string $sql, array $bindings = []): ?array
     {
@@ -116,12 +119,28 @@ final class ExplainRunner
         }
         $pick ??= [];
 
+        $tables = [];
+        foreach ($rows as $row) {
+            if (! isset($row['table']) || str_starts_with((string) $row['table'], '<')) {
+                continue;
+            }
+            $tables[] = [
+                'table' => (string) $row['table'],
+                'alias' => null,
+                'rows' => isset($row['rows']) ? (int) $row['rows'] : null,
+                'key' => isset($row['key']) ? (string) $row['key'] : null,
+                'type' => isset($row['type']) ? (string) $row['type'] : null,
+                'possible_keys' => isset($row['possible_keys']) ? (string) $row['possible_keys'] : null,
+            ];
+        }
+
         return [
             'full_scan' => strtoupper((string) ($pick['type'] ?? '')) === 'ALL',
             'table' => isset($pick['table']) ? (string) $pick['table'] : null,
             'rows' => isset($pick['rows']) ? (int) $pick['rows'] : null,
             'key' => isset($pick['key']) ? (string) $pick['key'] : null,
             'possible_keys' => isset($pick['possible_keys']) ? (string) $pick['possible_keys'] : null,
+            'tables' => $tables,
             'raw' => $rows,
         ];
     }
@@ -135,24 +154,42 @@ final class ExplainRunner
         $json = array_values($rows[0] ?? [])[0] ?? '[]';
         $plan = json_decode((string) $json, true) ?: [];
         $seq = null;
-        $walk = function (array $node) use (&$walk, &$seq): void {
+        $tables = [];
+        $walk = function (array $node, ?int $heap) use (&$walk, &$seq, &$tables): void {
             if (($node['Node Type'] ?? null) === 'Seq Scan' && ($seq === null || ($node['Plan Rows'] ?? 0) > ($seq['Plan Rows'] ?? 0))) {
                 $seq = $node;
             }
+            if (isset($node['Relation Name'])) {
+                $heap = count($tables);
+                $tables[] = [
+                    'table' => (string) $node['Relation Name'],
+                    'alias' => isset($node['Alias']) && $node['Alias'] !== $node['Relation Name'] ? (string) $node['Alias'] : null,
+                    'rows' => isset($node['Plan Rows']) ? (int) $node['Plan Rows'] : null,
+                    'key' => isset($node['Index Name']) ? (string) $node['Index Name'] : null,
+                    'type' => ($node['Node Type'] ?? null) === 'Seq Scan' ? 'ALL' : 'ref',
+                    'possible_keys' => null,
+                ];
+            } elseif ($heap !== null && isset($node['Index Name']) && $tables[$heap]['key'] === null) {
+                $tables[$heap]['key'] = (string) $node['Index Name'];
+            }
             foreach ($node['Plans'] ?? [] as $child) {
-                $walk($child);
+                $walk($child, $heap);
             }
         };
         if (isset($plan[0]['Plan'])) {
-            $walk($plan[0]['Plan']);
+            $walk($plan[0]['Plan'], null);
         }
+
+        // like MySQL, name the driving table (and its key) even when nothing is scanned
+        $first = $seq === null ? ($tables[0] ?? null) : null;
 
         return [
             'full_scan' => $seq !== null,
-            'table' => $seq['Relation Name'] ?? null,
-            'rows' => isset($seq['Plan Rows']) ? (int) $seq['Plan Rows'] : null,
-            'key' => null,
+            'table' => $seq['Relation Name'] ?? $first['table'] ?? null,
+            'rows' => isset($seq['Plan Rows']) ? (int) $seq['Plan Rows'] : ($first['rows'] ?? null),
+            'key' => $first['key'] ?? null,
             'possible_keys' => null,
+            'tables' => $tables,
             'raw' => $plan,
         ];
     }
@@ -166,6 +203,7 @@ final class ExplainRunner
         $table = null;
         $key = null;
         $full = false;
+        $tables = [];
         foreach ($rows as $row) {
             $detail = (string) ($row['detail'] ?? '');
             if (preg_match('/^SCAN (?:TABLE )?(\S+)(.*)$/i', $detail, $m) === 1
@@ -176,6 +214,17 @@ final class ExplainRunner
             } elseif (preg_match('/USING (?:COVERING )?INDEX (\S+)/i', $detail, $m) === 1) {
                 $key ??= $m[1];
             }
+            if (preg_match('/^(SCAN|SEARCH) (?:TABLE )?(\S+)(?: AS (\S+))?(.*)$/i', $detail, $m) === 1 && strcasecmp($m[2], 'CONSTANT') !== 0) {
+                $indexed = preg_match('/USING (?:COVERING )?INDEX (\S+)/i', $m[4], $k) === 1;
+                $tables[] = [
+                    'table' => trim($m[2], '`"[]'),
+                    'alias' => ($m[3] ?? '') !== '' ? trim($m[3], '`"[]') : null,
+                    'rows' => null,
+                    'key' => $indexed ? $k[1] : null,
+                    'type' => strtoupper($m[1]) === 'SCAN' && ! $indexed ? 'ALL' : 'ref',
+                    'possible_keys' => null,
+                ];
+            }
         }
 
         return [
@@ -184,6 +233,7 @@ final class ExplainRunner
             'rows' => null,
             'key' => $key,
             'possible_keys' => null,
+            'tables' => $tables,
             'raw' => $rows,
         ];
     }

@@ -14,6 +14,10 @@ final class Issue
 
     public const TYPE_MISSING_INDEX = 'missing_index';
 
+    public const TYPE_INDEX_NOT_CHOSEN = 'index_not_chosen';
+
+    public const TYPE_PLAN_FLIP = 'plan_flip';
+
     public const TYPE_MEMORY = 'memory_hog';
 
     public const TYPE_LAZY_LOAD = 'lazy_load';

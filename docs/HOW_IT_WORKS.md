@@ -72,7 +72,7 @@ With the defaults (`sampling_rate` 1.0) every request is observed and only unint
 `storage.driver` chooses where finished traces go.
 
 - `memory` (default): the last `memory_sink_limit` traces are held in the process. Useful for tests and ad-hoc inspection; the dashboard and agent commands need the database driver.
-- `database`: two tables on `storage.connection` (the default connection when unset).
+- `database`: two tables on `storage.connection` (the default connection when unset; `lantern` selects a dedicated SQLite file at `storage/lantern/lantern.sqlite`). Each trace and issue row carries the `app` name so applications sharing a database stay separable.
 
 | Table | Contents |
 |---|---|

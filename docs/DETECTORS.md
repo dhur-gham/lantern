@@ -1,10 +1,10 @@
 # Detectors
 
-Lantern runs six detectors against every finished trace. Each reports an issue with a type, a severity (`critical`, `warning`, `info`), a call site (file and line), the number of occurrences, the total time, and a suggested fix. Issues with the same key are merged across requests, so the dashboard and `lantern:issues` show one row per problem with `first_seen`, `last_seen` and a running count.
+Lantern runs eight detectors against every finished trace. Each reports an issue with a type, a severity (`critical`, `warning`, `info`), a call site (file and line), the number of occurrences, the total time, and a suggested fix. Issues with the same key are merged across requests, so the dashboard and `lantern:issues` show one row per problem with `first_seen`, `last_seen` and a running count.
 
 The detector list is the `detectors` array in `config/lantern.php`. Remove a class to turn that detector off. A detector that throws is skipped and never affects the request.
 
-The query detectors (N+1, duplicate, slow, missing index) skip transaction markers, failed queries and framework plumbing (see [False positives](#false-positives-and-ignoring-queries)).
+The query detectors (N+1, duplicate, slow, missing index, index not chosen, plan flip) skip transaction markers, failed queries and framework plumbing (see [False positives](#false-positives-and-ignoring-queries)).
 
 | Type | Catches | Default trigger |
 |---|---|---|
@@ -12,7 +12,9 @@ The query detectors (N+1, duplicate, slow, missing index) skip transaction marke
 | `lazy_load` | Relation loaded lazily on many models in a loop | 5 or more lazy loads at one site |
 | `duplicate_query` | Identical SQL and bindings run more than once in a trace | 2 or more repeats |
 | `slow_query` | A query slower than the threshold | 100 ms |
-| `missing_index` | A SELECT that EXPLAIN reports as a full scan | needs `explain` on |
+| `missing_index` | A SELECT that EXPLAIN reports as a full scan with no suitable index | needs `explain` on |
+| `index_not_chosen` | A SELECT that has a suitable index but EXPLAIN chose a full scan | needs `explain` on |
+| `plan_flip` | An `IN (...)` query whose plan changes, or whose cost outgrows the list, as the list gets longer | needs `explain` on; samples across requests need the database driver |
 | `memory_hog` | A span that grows memory sharply, or an unbounded SELECT followed by growth | 32 MB |
 
 ## n_plus_one
@@ -142,18 +144,31 @@ Order::where('status', 'paid')->latest()->take(100)->get();
 
 **What it catches.** SELECT statements that the database plans as a full table scan on a filtered column.
 
-**How it is detected.** Off by default; set `explain` to `true`. When a trace finishes, Lantern takes the query shapes that took at least `thresholds.explain_min_ms` (default 0, so every SELECT shape qualifies and the result does not depend on one run's timing; never above `slow_query_ms`), runs `EXPLAIN` on one sample of each against the same connection (`EXPLAIN QUERY PLAN` on SQLite). Only SELECT statements are explained. A shape is reported when the plan shows a full scan and the query has a WHERE predicate other than a primary-key lookup. Where the database estimates rows (MySQL, MariaDB, PostgreSQL), scans of 100 rows or fewer are ignored; SQLite has no estimate, so any scan with a column predicate counts. The suggested index lists the columns found in the WHERE clause.
+**How it is detected.** Off by default; set `explain` to `true`. When a trace finishes, Lantern takes the query shapes that took at least `thresholds.explain_min_ms` (default 0, so every SELECT shape qualifies and the result does not depend on one run's timing; never above `slow_query_ms`), runs `EXPLAIN` on one sample of each against the same connection (`EXPLAIN QUERY PLAN` on SQLite). Only SELECT statements are explained. A shape is reported when the plan shows a full scan and the query has a WHERE or JOIN predicate other than a primary-key lookup. Where the database estimates rows (MySQL, MariaDB, PostgreSQL), scans of 100 rows or fewer are ignored; SQLite has no estimate, so any scan with a column predicate counts.
 
-**Severity.** Always `warning`.
+**How the suggested index is built.** The suggestion comes from the scanned table only: aliases and qualified names (`o.status`, `orders.status`) are resolved through the SQL, and a column that belongs to another table in the join is never suggested. Within the table:
 
-**Config.** `explain` (`LANTERN_EXPLAIN`), `thresholds.explain_min_ms`, `thresholds.slow_query_ms`. The row floor is read from an optional top-level `explain_min_rows` key (default 100) that is not in the published config file.
+- Equality columns come first, then `IN`, then range (`<`, `>`, `between`, `like`) columns. Negated predicates (`<>`, `not in`, `is not null`) cannot use an index and are ignored. When the table also has plain filters, its join columns are left out.
+- Columns with only a handful of distinct values (at most `explain_low_cardinality`, default 5, or a boolean type such as `tinyint(1)`) are moved to the end, so a yes/no flag is never the first column. If every filtered column is like that, no column list is suggested.
+- A column that already has its own unique index is skipped, and the list is capped at `explain_max_index_columns` (default 4) columns.
+- Distinct counts and column types come from the catalog (`SHOW INDEX` and `information_schema` on MySQL/MariaDB, `pg_stats` on PostgreSQL). SQLite has no such source, so only the filter kind and a flag-style name (`is_*`, `has_*`) are used there.
+
+**OR across tables.** When the top-level `WHERE` is an `OR` whose branches touch different tables, no single index can serve it, so no columns are suggested. The suggestion reads: "OR across tables: no single index can serve this; check the plan (EXPLAIN ANALYZE), the join order, or split it into a UNION."
+
+**Plan evidence.** The issue meta keeps the per-table plan (`tables`: table, estimated rows, chosen key, access type), `rows_read` (estimated rows read by the scans), `rows_returned` (`null` until an actual count is available) and `columns_by_table`. `lantern:issue` shows `rows_read` (plus `read_ratio`, rows read per row returned, once `rows_returned` is known) and the per-table plan under `evidence`; `lantern:trace --summary` adds `rows_read` to the finding and its query group, and query groups with equal time are ordered by it.
+
+**Production projection.** Local tables are usually far smaller than production, so a scan that looks cheap here can be the slow one there. When production row counts are known, from `production_row_counts` or the `row_counts` of the `schema_snapshot` file, each scanned table gets a `projected` entry in the issue meta (`table`, `local_rows`, `production_rows`, `factor`) and the suggestion ends with, for example, "reads 75k rows here, about 839k (11x) in production". With a snapshot, tables whose indexes differ from production also get `schema_note`, for example "order_items: local schema differs from production: missing merchant_id_2", which `lantern:issue` shows under `evidence`. Nothing changes when neither is configured.
+
+**Severity.** `warning`; `critical` when the projected production rows of a scanned table reach `thresholds.production_scan_rows` (default 500000, `0` turns it off). `index_not_chosen` follows the same rule.
+
+**Config.** `explain` (`LANTERN_EXPLAIN`), `thresholds.explain_min_ms`, `thresholds.slow_query_ms`. Optional top-level keys that are not in the published config file: `explain_min_rows` (row floor, default 100), `explain_low_cardinality` (default 5) and `explain_max_index_columns` (default 4).
 
 **Example.**
 
 ```
 warning   missing_index   Possible missing index on orders
           full scan on orders, ~48210 rows, possible keys: none
-          Fix: Consider an index on (customer_id, status)
+          Fix: Consider an index on (customer_id, status, is_archived)
 ```
 
 **Fix.**
@@ -163,6 +178,61 @@ Schema::table('orders', fn ($t) => $t->index(['customer_id', 'status']));
 ```
 
 Treat the suggestion as a starting point: column order, and whether an index pays off at all, depend on your data. Small tables are planned as scans even when an index exists.
+
+## index_not_chosen
+
+**What it catches.** A full scan where an index that could have helped already exists and the plan did not use it. Writing a migration for such an index is wasted work; the problem is the plan.
+
+**How it is detected.** Runs inside the `missing_index` detector (needs `explain` on). When the plan shows a full scan, Lantern reads the indexes of every table in the plan (`SHOW INDEX` on MySQL/MariaDB, `pg_index` on PostgreSQL; SQLite is skipped). A table is a candidate when an index starts with a column that the query filters on, or, for tables other than the scanned one, joins on, and that index is not the key the plan chose. A table whose chosen key already starts with a filtered column counts as served. Filter-led indexes win over join-led ones, then the index matching the longest run of query columns. The finding names `table.index`, for example `order_items.merchant_id_2`, even when the full scan is on another table.
+
+**Severity.** `warning`, or `critical` under the production projection rule described for `missing_index`. The meta also carries `projected` and `schema_note` when production data is configured.
+
+**Config.** `explain` (`LANTERN_EXPLAIN`), `thresholds.explain_min_ms`, `thresholds.slow_query_ms`, `thresholds.production_scan_rows`.
+
+**Why this happens.** The optimizer can skip an index because of stale statistics, a different join order than you expect, or a cost estimate that changes with the number of values in an `IN (...)` list.
+
+**Example.**
+
+```
+warning   index_not_chosen   Index exists but was not chosen: order_items.merchant_id_2
+          full scan on orders, ~820000 rows
+          Fix: The optimizer chose a different plan (full scan on orders). Check it with EXPLAIN ANALYZE, force the order with a join-order hint, or refresh statistics with ANALYZE TABLE order_items.
+```
+
+**Fix.** Look at the real plan first (`EXPLAIN ANALYZE`), then either refresh statistics (`ANALYZE TABLE order_items`) or pin the join order with an optimizer hint such as MySQL's `JOIN_ORDER(order_items, orders)` or `STRAIGHT_JOIN`. The issue meta carries `table`, `index`, `index_columns`, `used_key` and `scanned_table`.
+
+## plan_flip
+
+**What it catches.** A query whose plan changes as an `IN (...)` list grows, or whose cost grows much faster than the list. A `whereIn()` over 7 ids can use an index range while the same query over 41 ids scans a large table, so a request that is fast in development with few values is slow in production with many.
+
+**How it is detected.** Off by default; set `explain` to `true`. Query spans record the length of their longest `IN (...)` list (`in_size`); the fingerprint ignores list length, so all sizes share one shape. Each trace adds one sample per shape and list size: the average time, and an `EXPLAIN` plan (table, key, scan or not, estimated rows) refreshed at most every `plan_flip.refresh_minutes`. Samples live in `lantern_plan_samples` (database storage driver; run the migrations), so sizes seen in different requests are compared. Without that table, or with the memory driver, only sizes seen in the current trace are compared. Per trace at most 10 shapes are sampled and 3 EXPLAINs run; each shape keeps at most 64 sizes (exact up to 64, then about 19% steps). A finding is raised when, between two sizes:
+
+- the chosen plan differs (table, key or scan) and the larger size costs more than the list growth explains: it newly scans, or its time or estimated rows grew faster than the list; or
+- time or estimated rows grew more than `plan_flip.factor` times faster than the list.
+
+The larger size must take at least `plan_flip.min_ms` or read at least `plan_flip.min_rows`, so tiny tables do not report. The issue key depends only on the query shape, not on the call-site line.
+
+**Severity.** `critical` when the larger size averages at least 5 times `thresholds.slow_query_ms`, otherwise `warning`.
+
+**Config.** `explain` (`LANTERN_EXPLAIN`), `plan_flip.factor` (`LANTERN_PLAN_FLIP_FACTOR`, 3), `plan_flip.min_ms` (`LANTERN_PLAN_FLIP_MIN_MS`, 10), `plan_flip.min_rows` (`LANTERN_PLAN_FLIP_MIN_ROWS`, 1000), `plan_flip.refresh_minutes` (`LANTERN_PLAN_FLIP_REFRESH_MINUTES`, 60). Samples are pruned with traces by `lantern:prune`.
+
+**Example.**
+
+```
+critical  plan_flip   Plan changes as the IN list grows: index merchant_id_2 on order_items at 7 values, full scan on orders at 41
+          66 ms at 7 values, 2900 ms and ~820000 rows at 41
+          Fix: The optimizer treats 7 and 41 values differently. Compare plans with: php artisan lantern:probe 3f9c2a41b7d0 --in-sizes=7,41
+```
+
+`php artisan lantern:probe {id} --in-sizes=1,7,20,41,100` re-runs EXPLAIN for the finding's query at those list sizes, filled with real ids from the table, and lists where the plan changes (see [CLI](CLI.md#lanternprobe-key)).
+
+**Fix.** Look at the real plan with `EXPLAIN ANALYZE`, then refresh statistics (`ANALYZE TABLE order_items`), pin the join order with an optimizer hint (MySQL `JOIN_ORDER(...)`, `STRAIGHT_JOIN`), or keep the list below the size where the plan changes:
+
+```php
+foreach (array_chunk($merchantIds, 20) as $chunk) {
+    $counts = $counts->merge(Order::whereIn('merchant_id', $chunk)->get());
+}
+```
 
 ## memory_hog
 

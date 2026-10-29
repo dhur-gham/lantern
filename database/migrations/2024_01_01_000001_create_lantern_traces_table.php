@@ -25,6 +25,7 @@ return new class extends Migration
             $table->string('method', 10)->nullable();
             $table->string('path', 255)->nullable();
             $table->string('route', 255)->nullable();
+            $table->string('app', 100)->nullable()->index();
             $table->unsignedInteger('query_count')->default(0);
             $table->float('query_total_ms')->default(0);
             $table->unsignedInteger('issue_count')->default(0);
