@@ -152,7 +152,10 @@ final class LifecycleInstrumentation
         $startNs ??= hrtime(true);
 
         $path = '/'.ltrim($request->path(), '/');
-        $trace = $recorder->begin(['kind' => 'request', 'method' => $request->method(), 'path' => $path, 'host' => $request->getHttpHost()], $startNs);
+        // the host is only evidence of what a browser used when the web server delivered the request, not for a
+        // request built in a console process (tinker, Livewire::test, lantern:run)
+        $host = $this->app->runningInConsole() ? [] : ['host' => $request->getHttpHost()];
+        $trace = $recorder->begin(['kind' => 'request', 'method' => $request->method(), 'path' => $path] + $host, $startNs);
         $trace->root()->name = $request->method().' '.$path;
         $this->handled = false;
 

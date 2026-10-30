@@ -117,6 +117,22 @@ final class ResolvedIssuesTest extends AgentTestCase
         $this->assertNotNull($this->resolvedAt($issue->key));
     }
 
+    public function test_a_livewire_finding_resolves_on_another_row_and_another_batch_of_the_same_interaction(): void
+    {
+        $normalise = \Lantern\Instrumentation\Livewire\LivewireInstrumentation::normalise(...);
+        $first = 'livewire:'.$normalise('App\Pages\EditItemSimple::updated.data.variations.record-17097962094.sizes.0');
+        $second = 'livewire:'.$normalise('App\Pages\EditItemSimple::updated.data.variations.record-5550001.sizes.3');
+        $this->assertSame($first, $second);
+
+        $issue = $this->slowIssue();
+        $this->persist($this->trace([['ms' => 300.0]], $first), [$issue]);
+
+        $this->source('<?php // v2, the query is gone');
+        $this->persist($this->trace([['fp' => 'fp-other', 'ms' => 5.0, 'sql' => 'select * from "users"']], $second));
+
+        $this->assertNotNull($this->resolvedAt($issue->key));
+    }
+
     public function test_a_removed_query_in_a_job_resolves_by_its_job_route(): void
     {
         $issue = $this->slowIssue();

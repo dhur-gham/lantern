@@ -101,16 +101,53 @@ final class LivewireInstrumentationTest extends TestCase
         $this->assertSame('livewire:'.ProbeComponent::class.'::inc', $trace->meta['route']);
     }
 
-    public function test_batched_calls_join_with_plus_and_schema_param_is_appended(): void
+    /** @param list<array{0: string, 1: string}> $calls */
+    private function traceWithCalls(array $calls): \Lantern\Trace\Trace
     {
-        $recorder = $this->app->make(Recorder::class);
-        $recorder->begin(['kind' => 'request']);
-        $trace = $recorder->trace();
-
+        $recorder = new Recorder;
+        $trace = $recorder->begin(['kind' => 'request']);
         $m = new \ReflectionMethod(\Lantern\Instrumentation\Livewire\LivewireInstrumentation::class, 'addCall');
-        $m->invoke(null, $trace, 'App\Foo', 'a');
-        $m->invoke(null, $trace, 'App\Foo', 'callSchemaComponentMethod:form.x.item_images');
+        foreach ($calls as [$class, $method]) {
+            $m->invoke(null, $trace, $class, $method);
+        }
 
-        $this->assertSame('livewire:App\Foo::a+App\Foo::callSchemaComponentMethod:form.x.item_images', $trace->meta['route']);
+        return $trace;
+    }
+
+    public function test_batched_calls_are_kept_for_display_and_the_route_is_the_first_call(): void
+    {
+        $trace = $this->traceWithCalls([['App\Foo', 'a'], ['App\Foo', 'callSchemaComponentMethod:form.x.item_images']]);
+
+        $this->assertSame(['App\Foo::a', 'App\Foo::callSchemaComponentMethod:form.x.item_images'], $trace->meta['livewire_calls']);
+        $this->assertSame('livewire:App\Foo::a+App\Foo::callSchemaComponentMethod:form.x.item_images', $trace->meta['livewire_route']);
+        $this->assertSame('livewire:App\Foo::a', $trace->meta['route']);
+    }
+
+    public function test_the_same_interaction_has_the_same_route_whatever_rows_or_batching(): void
+    {
+        $first = $this->traceWithCalls([
+            ['App\Pages\EditItemSimple', 'updated.data.variations.record-17097962094.sizes.0'],
+            ['App\Pages\EditItemSimple', 'callSchemaComponentMethod:form.variations.record-17097962094.item_images'],
+            ['App\Pages\EditItemSimple', 'updated.data.variations.record-17097962094.sizes.1'],
+        ]);
+        $second = $this->traceWithCalls([
+            ['App\Pages\EditItemSimple', 'updated.data.variations.record-5550001.sizes.3'],
+            ['App\Pages\EditItemSimple', 'callSchemaComponentMethod:form.variations.record-5550001.item_images'],
+        ]);
+
+        $this->assertSame('livewire:App\Pages\EditItemSimple::updated.data.variations.record-*.sizes.*', $first->meta['route']);
+        $this->assertSame($first->meta['route'], $second->meta['route']);
+        $this->assertNotSame($first->meta['livewire_route'], $second->meta['livewire_route']);
+    }
+
+    public function test_normalise_generalises_record_keys_uuids_and_list_positions_only(): void
+    {
+        $n = fn (string $c): string => \Lantern\Instrumentation\Livewire\LivewireInstrumentation::normalise($c);
+
+        $this->assertSame('A\B::callSchemaComponentMethod:form.rows.record-*.photos', $n('A\B::callSchemaComponentMethod:form.rows.record-42.photos'));
+        $this->assertSame('A\B::updated.data.rows.item-*.name', $n('A\B::updated.data.rows.item-0f8fad5b-d9cb-469f-a165-70867728950e.name'));
+        $this->assertSame('A\B::updated.data.tags.*', $n('A\B::updated.data.tags.12'));
+        $this->assertSame('A\B::save', $n('A\B::save'));
+        $this->assertSame('A\V2::updated.data.v2.name', $n('A\V2::updated.data.v2.name'));
     }
 }

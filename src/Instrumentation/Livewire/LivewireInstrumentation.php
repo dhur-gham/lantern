@@ -178,8 +178,23 @@ final class LivewireInstrumentation
         if (! in_array($entry, $calls, true)) {
             $calls[] = $entry;
         }
+        // what ran, exactly: for display
         $trace->meta['livewire_calls'] = $calls;
-        $trace->meta['route'] = 'livewire:'.implode('+', $calls);
+        $trace->meta['livewire_route'] = 'livewire:'.implode('+', $calls);
+        // what the interaction is: the first call with record keys and list positions generalised, so the same
+        // interaction has the same route on every run, whichever rows it touched or however many calls were batched
+        $trace->meta['route'] = 'livewire:'.self::normalise($calls[0]);
+    }
+
+    /**
+     * `Class::updated.data.items.record-17.sizes.0` becomes `Class::updated.data.items.record-*.sizes.*`: repeater
+     * record keys (`record-`/`item-` followed by an id or uuid) and numeric path segments are variable.
+     */
+    public static function normalise(string $call): string
+    {
+        $call = (string) preg_replace('/\b(record|item)-[^.:+\s]+/', '$1-*', $call);
+
+        return (string) preg_replace('/(?<=\.)\d+(?=[.:+]|$)/', '*', $call);
     }
 
     private static function touch(Recorder $recorder, mixed $class): void

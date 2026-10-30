@@ -6,6 +6,14 @@ Lantern loads its migrations from the package, so `php artisan migrate` is enoug
 
 If your team applies schema changes by hand, print the SQL instead of migrating (see [Applying the schema by hand](#applying-the-schema-by-hand)).
 
+## 0.7.1
+
+**No schema change.** Nothing to migrate.
+
+**Fixed: the `APP_URL` host check used requests that did not come from a browser.** A request sent through the HTTP kernel from a console process (tinker, `Livewire::test()`, `lantern:run`, `Lantern::record`) was stored with the host `localhost`, and the next `lantern:login` then refused with a host mismatch. A request's `host` is now stored only when the web server delivered it (php-fpm, `php -S`, Octane), and the check ignores traces without one. Traces stored by 0.7.0 from console requests keep their `localhost` host until a real request is recorded.
+
+**Fixed: Livewire findings rarely resolved.** The route of a Livewire update trace held the repeater record key and every batched call (`livewire:...::updated.data.variations.record-17097962094.sizes.0+...`), so the same interaction got a different route on every run and a fixed finding never met a clean trace with the same route. The route is now the first call with variable parts generalised (`livewire:...::updated.data.variations.record-*.sizes.*`: `record-`/`item-` keys and numeric list positions become `*`), the same on every run whichever rows were touched and however many calls were batched. The exact calls are kept in the trace as `livewire_calls` and `livewire_route`. Filters on a full Livewire route written against 0.7.0 or earlier need to use the generalised form or a wildcard (`--route='livewire:*EditItemSimple*'` is unchanged).
+
 ## 0.7.0
 
 **No schema change.** Nothing to migrate.
