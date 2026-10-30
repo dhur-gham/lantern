@@ -342,6 +342,17 @@ final class ResolvedIssuesTest extends AgentTestCase
         $this->assertNotNull($this->resolvedAt($issue->key));
     }
 
+    public function test_a_smaller_re_fire_with_other_sql_keeps_the_baseline_sql(): void
+    {
+        $issue = $this->slowIssue();
+        $this->persist($this->trace([['ms' => 300.0, 'in' => 41, 'sql' => $this->inSql(41)]]), [$issue]);
+        $this->persist($this->trace([['ms' => 150.0, 'in' => 7, 'sql' => $this->inSql(7, '/*+ JOIN_ORDER(a, b) */')]]), [$issue]);
+
+        $this->persist($this->trace([['ms' => 20.0, 'in' => 7, 'sql' => $this->inSql(7)]]));
+
+        $this->assertNull($this->resolvedAt($issue->key), 'the 41-value query text is still the one that fired');
+    }
+
     public function test_a_larger_input_raises_the_baseline(): void
     {
         $issue = $this->slowIssue();
