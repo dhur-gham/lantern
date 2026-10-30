@@ -30,6 +30,17 @@ return new class extends Migration
             });
         }
 
+        if (! $schema->hasColumn('lantern_issues', 'in_size')) {
+            $schema->table('lantern_issues', function (Blueprint $table) {
+                $table->unsignedInteger('in_size')->nullable();
+            });
+        }
+        if (! $schema->hasColumn('lantern_issues', 'sql_hash')) {
+            $schema->table('lantern_issues', function (Blueprint $table) {
+                $table->string('sql_hash', 32)->nullable();
+            });
+        }
+
         // These types are keyed by the query shape alone, so existing rows can be resolved without waiting to fire again.
         $connection = DB::connection($this->getConnection());
         $connection->table('lantern_issues')
@@ -41,6 +52,13 @@ return new class extends Migration
     public function down(): void
     {
         $schema = Schema::connection($this->getConnection());
+        foreach (['in_size', 'sql_hash'] as $column) {
+            if ($schema->hasTable('lantern_issues') && $schema->hasColumn('lantern_issues', $column)) {
+                $schema->table('lantern_issues', function (Blueprint $table) use ($column) {
+                    $table->dropColumn($column);
+                });
+            }
+        }
         foreach (['resolved_at', 'shape'] as $column) {
             if ($schema->hasTable('lantern_issues') && $schema->hasColumn('lantern_issues', $column)) {
                 $schema->table('lantern_issues', function (Blueprint $table) use ($column) {

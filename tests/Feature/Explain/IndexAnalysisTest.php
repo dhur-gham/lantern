@@ -629,4 +629,60 @@ final class IndexAnalysisTest extends QueryTestCase
         $this->assertSame(839000, $issue->meta['projected'][0]['production_rows']);
         $this->assertSame(Issue::SEV_CRITICAL, $issue->severity);
     }
+
+    /**
+     * @param  array<string, float>  $queries  sql => time in ms, in execution order
+     * @param  array<string, mixed>  $extra
+     * @return list<Issue>
+     */
+    private function detectTimed(AnalyzeSource $analyzer, array $queries, array $extra = []): array
+    {
+        $recorder = $this->recorder();
+        $recorder->reset();
+        $trace = $recorder->begin();
+        foreach (array_keys($queries) as $i => $sql) {
+            $now = hrtime(true);
+            $ms = $queries[$sql];
+            $recorder->recordClosed(SpanType::Query, 'q'.$i, $now, $now + (int) ($ms * 1_000_000), [
+                'sql' => $sql, 'bindings' => [1], 'fingerprint' => md5($sql), 'connection' => 'testing', 'time_ms' => $ms, 'failed' => false,
+            ]);
+        }
+        $plan = $this->plan([['table' => 'orders', 'rows' => 820000, 'key' => null, 'type' => 'ALL']]);
+        $config = array_replace_recursive($this->config(), ['explain_analyze' => true], $extra);
+
+        return (new MissingIndexDetector($config, $plan, $this->catalog(), $analyzer))->detect($trace);
+    }
+
+    public function test_the_replay_budget_goes_to_the_slowest_query_not_the_first_one(): void
+    {
+        $analyzer = $this->analyzer(41);
+
+        $issues = $this->detectTimed($analyzer, [
+            'select * from orders where customer_id = ? /* a */' => 120.0,
+            'select * from orders where level = ? /* b */' => 130.0,
+            'select * from orders where is_new = ? /* slowest */' => 870.0,
+        ], ['explain_analyze_max' => 1]);
+
+        $this->assertCount(1, $analyzer->calls);
+        $this->assertStringContainsString('slowest', $analyzer->calls[0]['sql']);
+        $byQuery = [];
+        foreach ($issues as $issue) {
+            $byQuery[$issue->meta['rows_returned'] === 41 ? 'measured' : 'skipped'][] = $issue;
+        }
+        $this->assertCount(1, $byQuery['measured']);
+        $this->assertSame(['budget', 'budget'], array_column(array_column($byQuery['skipped'], 'meta'), 'rows_returned_why'));
+    }
+
+    public function test_an_empty_rows_returned_says_why(): void
+    {
+        $failed = $this->detectAnalyzed($this->analyzer(null));
+        $this->assertNull($failed[0]->meta['rows_returned']);
+        $this->assertSame('failed', $failed[0]->meta['rows_returned_why']);
+
+        $redacted = $this->detectAnalyzed($this->analyzer(41), [], ['[redacted]']);
+        $this->assertSame('no_bindings', $redacted[0]->meta['rows_returned_why']);
+
+        $measured = $this->detectAnalyzed($this->analyzer(41));
+        $this->assertArrayNotHasKey('rows_returned_why', $measured[0]->meta);
+    }
 }

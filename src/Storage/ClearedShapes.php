@@ -32,9 +32,17 @@ final class ClearedShapes
     /** Under PlanFlipDetector::MAX_SHAPES (10). */
     private const FLIP_SHAPES = 8;
 
+    /** Hash of the SQL text with IN lists collapsed: unchanged by a longer list, changed by an edit or a hint. */
+    public static function sqlHash(string $sql): string
+    {
+        $sql = (string) preg_replace('/\?(?:\s*,\s*\?)+/', '?', $sql);
+
+        return md5(trim((string) preg_replace('/\s+/', ' ', $sql)));
+    }
+
     /**
      * @param array<string, mixed> $config full config('lantern')
-     * @return list<string> issue shapes (Findings::shape) that did not recur in this trace
+     * @return array<string, array{in_size: int, sql_hashes: list<string>}> issue shape (Findings::shape) => the largest IN list this trace ran for it and the SQL hashes it ran, for shapes that did not recur
      */
     public static function candidates(Trace $trace, array $config): array
     {
@@ -54,6 +62,8 @@ final class ClearedShapes
         $sites = [];
         $selects = [];
         $flips = [];
+        $sizes = [];
+        $hashes = [];
 
         foreach ($trace->spans() as $span) {
             $m = $span->meta;
@@ -69,6 +79,11 @@ final class ClearedShapes
                 $seen[$fp] = true;
             }
 
+            $sizes[$fp] = max($sizes[$fp] ?? 0, is_int($m['in_size'] ?? null) ? $m['in_size'] : 0);
+            if (is_string($m['sql'] ?? null)) {
+                $hashes[$fp][self::sqlHash($m['sql'])] = true;
+            }
+
             $site = Findings::site($span->callSite);
             $sites[$fp."\0".($site === null ? '-' : $site['file'].'#'.($site['function'] ?? ''))] = true;
 
@@ -81,27 +96,34 @@ final class ClearedShapes
         }
 
         $shapes = [];
+        $owner = [];
         foreach (array_keys($sites) as $entry) {
             [$fp, $where] = explode("\0", $entry, 2);
             if ($nPlusOne) {
-                $shapes[] = Issue::key(Issue::TYPE_N_PLUS_ONE, $fp, $where);
+                $owner[$shapes[] = Issue::key(Issue::TYPE_N_PLUS_ONE, $fp, $where)] = $fp;
             }
             if ($slow) {
-                $shapes[] = Issue::key(Issue::TYPE_SLOW, $fp, $where);
+                $owner[$shapes[] = Issue::key(Issue::TYPE_SLOW, $fp, $where)] = $fp;
             }
         }
         if ($index) {
             foreach (array_slice(array_keys(array_filter($selects, fn (float $ms): bool => $ms >= $minMs)), 0, self::EXPLAINED) as $fp) {
-                $shapes[] = Issue::key(Issue::TYPE_MISSING_INDEX, (string) $fp);
-                $shapes[] = Issue::key(Issue::TYPE_INDEX_NOT_CHOSEN, (string) $fp);
+                $owner[$shapes[] = Issue::key(Issue::TYPE_MISSING_INDEX, (string) $fp)] = (string) $fp;
+                $owner[$shapes[] = Issue::key(Issue::TYPE_INDEX_NOT_CHOSEN, (string) $fp)] = (string) $fp;
             }
         }
         if ($flip) {
             foreach (array_slice(array_keys($flips), 0, self::FLIP_SHAPES) as $fp) {
-                $shapes[] = Issue::key(Issue::TYPE_PLAN_FLIP, (string) $fp);
+                $owner[$shapes[] = Issue::key(Issue::TYPE_PLAN_FLIP, (string) $fp)] = (string) $fp;
             }
         }
 
-        return array_values(array_unique($shapes));
+        $out = [];
+        foreach (array_unique($shapes) as $shape) {
+            $fp = $owner[$shape];
+            $out[$shape] = ['in_size' => $sizes[$fp] ?? 0, 'sql_hashes' => array_map('strval', array_keys($hashes[$fp] ?? []))];
+        }
+
+        return $out;
     }
 }
