@@ -173,6 +173,8 @@ final class DatabaseTraceStore implements TraceStore
         if (! is_string($route) || $route === '') {
             return;
         }
+        // a batched Livewire request carries several routes; a finding recorded under any of them can be judged here
+        $routes = array_values(array_unique(array_filter([$route, ...array_map('strval', (array) ($trace->meta['livewire_routes'] ?? []))], fn (string $r): bool => $r !== '')));
 
         $executed = [];
         foreach ($trace->spans() as $span) {
@@ -189,7 +191,7 @@ final class DatabaseTraceStore implements TraceStore
         $rows = $conn->table('lantern_issues as i')
             ->join('lantern_traces as t', 't.id', '=', 'i.last_trace_id')
             ->whereNull('i.resolved_at')
-            ->where('t.route', $route)
+            ->whereIn('t.route', $routes)
             ->whereIn('i.type', $types)
             ->limit(500)
             ->whereNotNull('i.site_hash')

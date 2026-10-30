@@ -178,8 +178,40 @@ final class LivewireInstrumentation
         if (! in_array($entry, $calls, true)) {
             $calls[] = $entry;
         }
+        // what ran, exactly: for display
         $trace->meta['livewire_calls'] = $calls;
-        $trace->meta['route'] = 'livewire:'.implode('+', $calls);
+        $trace->meta['livewire_route'] = 'livewire:'.implode('+', $calls);
+        // what the interaction is: the main call with record keys and list positions generalised, so the same
+        // interaction has the same route on every run, whichever rows it touched or however many calls were batched
+        $routes = array_values(array_unique(array_map(fn (string $c): string => 'livewire:'.self::normalise($c), $calls)));
+        $trace->meta['livewire_routes'] = $routes;
+        $main = 0;
+        foreach ($calls as $i => $call) {
+            if (self::isMainCall($call)) {
+                $main = $i;
+                break;
+            }
+        }
+        $trace->meta['route'] = 'livewire:'.self::normalise($calls[$main]);
+    }
+
+    /** Filament's own components (notifications, global search) and lazy loads ride along in a batch; they are not the interaction. */
+    private static function isMainCall(string $call): bool
+    {
+        [$class, $method] = array_pad(explode('::', $call, 2), 2, '');
+
+        return ! str_starts_with($class, 'Filament\\') &&! str_starts_with($method, '__lazyLoad');
+    }
+
+    /**
+     * `Class::updated.data.items.record-17.sizes.0` becomes `Class::updated.data.items.record-*.sizes.*`: repeater
+     * record keys (`record-`/`item-` followed by an id or uuid) and numeric path segments are variable.
+     */
+    public static function normalise(string $call): string
+    {
+        $call = (string) preg_replace('/\b(record|item)-[^.:+\s]+/', '$1-*', $call);
+
+        return (string) preg_replace('/(?<=\.)\d+(?=[.:+]|$)/', '*', $call);
     }
 
     private static function touch(Recorder $recorder, mixed $class): void

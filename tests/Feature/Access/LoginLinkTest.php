@@ -146,6 +146,24 @@ final class LoginLinkTest extends AccessTestCase
         $this->assertArrayNotHasKey('hint', $data);
     }
 
+    public function test_a_request_made_in_a_console_process_does_not_count_for_the_host_check(): void
+    {
+        config(['app.url' => 'http://app.test']);
+        Route::get('/probe', fn () => 'ok');
+
+        // through the HTTP kernel with the host "localhost", like tinker, Livewire::test or lantern:run would
+        $this->get('http://localhost/probe')->assertOk();
+
+        $stored = \Illuminate\Support\Facades\DB::table('lantern_traces')->where('path', '/probe')->first();
+        $this->assertNotNull($stored, 'the request should have been traced');
+        $this->assertArrayNotHasKey('host', \Lantern\Storage\PayloadCodec::decode((string) $stored->payload)['meta'] ?? []);
+
+        [$code, $data] = $this->login(['surface' => 'panel']);
+
+        $this->assertSame(0, $code, json_encode($data));
+        $this->assertFalse($data['host_verified']);
+    }
+
     public function test_list_shows_surfaces_and_what_is_outstanding_and_revoke_clears_it(): void
     {
         $this->login(['surface' => 'panel']);

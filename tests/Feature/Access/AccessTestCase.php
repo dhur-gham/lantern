@@ -50,6 +50,18 @@ abstract class AccessTestCase extends TestCase
         return [SanctumServiceProvider::class, LanternServiceProvider::class];
     }
 
+    /** Tracing has to be on before the provider registers, or no request is traced at all. */
+    protected function resolveApplicationConfiguration($app)
+    {
+        parent::resolveApplicationConfiguration($app);
+
+        $app['config']->set('lantern.enabled', true);
+        $app['config']->set('lantern.kill_switch', false);
+        $app['config']->set('lantern.storage.driver', 'database');
+        $app['config']->set('database.default', 'testing');
+        $app['config']->set('database.connections.testing', ['driver' => 'sqlite', 'database' => ':memory:', 'prefix' => '']);
+    }
+
     protected function defineEnvironment($app): void
     {
         $app->detectEnvironment(fn () => $this->environment);

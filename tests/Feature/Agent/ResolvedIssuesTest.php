@@ -45,10 +45,10 @@ final class ResolvedIssuesTest extends AgentTestCase
     }
 
     /** @param list<array<string, mixed>> $queries */
-    private function trace(array $queries, ?string $route = null): Trace
+    private function trace(array $queries, ?string $route = null, array $meta = []): Trace
     {
         $recorder = new Recorder;
-        $trace = $recorder->begin(['kind' => 'request', 'method' => 'GET', 'path' => '/orders', 'status' => 200] + ($route === null ? [] : ['route' => $route]));
+        $trace = $recorder->begin(['kind' => 'request', 'method' => 'GET', 'path' => '/orders', 'status' => 200] + ($route === null ? [] : ['route' => $route]) + $meta);
         foreach ($queries as $q) {
             $ms = (float) ($q['ms'] ?? 10.0);
             $now = hrtime(true);
@@ -113,6 +113,40 @@ final class ResolvedIssuesTest extends AgentTestCase
 
         $this->source('<?php // v2, the query is gone');
         $this->persist($this->trace([['fp' => 'fp-other', 'ms' => 5.0, 'sql' => 'select * from "users"']], 'orders.index'));
+
+        $this->assertNotNull($this->resolvedAt($issue->key));
+    }
+
+    public function test_a_livewire_finding_resolves_on_another_row_and_another_batch_of_the_same_interaction(): void
+    {
+        $normalise = \Lantern\Instrumentation\Livewire\LivewireInstrumentation::normalise(...);
+        $first = 'livewire:'.$normalise('App\Pages\EditItemSimple::updated.data.variations.record-17097962094.sizes.0');
+        $second = 'livewire:'.$normalise('App\Pages\EditItemSimple::updated.data.variations.record-5550001.sizes.3');
+        $this->assertSame($first, $second);
+
+        $issue = $this->slowIssue();
+        $this->persist($this->trace([['ms' => 300.0]], $first), [$issue]);
+
+        $this->source('<?php // v2, the query is gone');
+        $this->persist($this->trace([['fp' => 'fp-other', 'ms' => 5.0, 'sql' => 'select * from "users"']], $second));
+
+        $this->assertNotNull($this->resolvedAt($issue->key));
+    }
+
+    public function test_a_finding_resolves_when_any_route_of_a_batched_request_matches(): void
+    {
+        $edit = 'livewire:App\Pages\EditItemSimple::update';
+        $notifications = 'livewire:Filament\Livewire\DatabaseNotifications::__lazyLoad';
+
+        $issue = $this->slowIssue();
+        $this->persist($this->trace([['ms' => 300.0]], $edit), [$issue]);
+
+        $this->source('<?php // v2, the query is gone');
+        $this->persist($this->trace(
+            [['fp' => 'fp-other', 'ms' => 5.0, 'sql' => 'select * from "users"']],
+            $notifications,
+            ['livewire_routes' => [$notifications, $edit]],
+        ));
 
         $this->assertNotNull($this->resolvedAt($issue->key));
     }
