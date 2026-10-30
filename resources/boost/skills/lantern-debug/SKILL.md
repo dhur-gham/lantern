@@ -11,7 +11,7 @@ description: Debug slow Laravel requests and query problems (N+1, lazy loading, 
 4. `php artisan lantern:issue {id} --format=json`; open `call_site.file` at `call_site.line`.
 5. Fix using the pattern below. Prefer fixing the query over any config change.
 6. Re-run the reproduction, then `php artisan lantern:diff {before} {after}`: expect the issue in `resolved` (or in `changed` with status `improved` when reduced but still present, even if its line moved), `new` empty, `queries.delta` negative.
-7. `php artisan lantern:check --route=/posts --no-new-issues`: exit 0 means done, 1 means still failing, 3 means nothing recorded (check the env flags).
+7. `php artisan lantern:check --route=/posts --no-new-issues`: exit 0 means done, 1 means still failing, 3 means nothing recorded (check the env flags). `lantern:issues` agrees: an issue whose query ran again without the finding is `status: resolved` and hidden unless you pass `--include-resolved`; if it is still listed as open, the finding is still firing.
 
 Always pass `--format=json` (the default table is large). Each result has `next`, the suggested follow-up command; `hint` explains empty or truncated results. With the `lantern` MCP server (`php artisan mcp:start lantern`) call `lantern_issues`, `lantern_issue`, `lantern_trace_summary`, `lantern_diff`, `lantern_check` instead; same JSON, same steps.
 

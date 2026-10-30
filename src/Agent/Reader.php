@@ -54,7 +54,7 @@ final class Reader
         $row = $this->queries->issue($key);
         if ($row === null && strlen($key) >= 6) {
             $matches = array_values(array_filter(
-                $this->queries->issues([], self::MAX_ROWS),
+                $this->queries->issues(['resolved' => 'include'], self::MAX_ROWS),
                 fn (array $r): bool => str_starts_with((string) $r['issue_key'], $key),
             ));
             if (count($matches) > 1) {
@@ -144,6 +144,8 @@ final class Reader
             if (isset($meta['rows_returned']) && is_numeric($meta['rows_returned']) && (int) $meta['rows_returned'] > 0) {
                 $out['rows_returned'] = (int) $meta['rows_returned'];
                 $out['read_ratio'] = round($out['rows_read'] / $out['rows_returned'], 1);
+            } elseif (is_string($meta['rows_returned_why'] ?? null) && in_array($meta['rows_returned_why'], ['unsupported', 'budget', 'no_bindings', 'timeout', 'parse_failed', 'failed'], true)) {
+                $out['rows_returned_why'] = $meta['rows_returned_why'];
             }
         }
         foreach (['tables', 'projected'] as $key) {
@@ -223,6 +225,15 @@ final class Reader
     public function issueRows(int $limit = self::MAX_ROWS): array
     {
         return $this->queries->issues([], $limit);
+    }
+
+    /**
+     * @param list<string> $ids issue ids
+     * @return list<string> those that are resolved
+     */
+    public function resolvedIds(array $ids): array
+    {
+        return $this->queries->resolvedKeys($ids);
     }
 
     /** @return array<string, mixed> */

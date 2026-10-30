@@ -79,6 +79,9 @@ final class MissingIndexDetector implements Detector
                 $candidates[$fp] = [$max, $spans];
             }
         }
+        // The slowest shapes first: the per-trace EXPLAIN and replay budgets must reach the heaviest queries, not
+        // whichever ran first (a stable sort keeps the execution order between equally slow ones).
+        uasort($candidates, fn (array $a, array $b): int => $b[0] <=> $a[0]);
         $candidates = array_map(fn (array $c) => $c[1], $candidates);
 
         $runner = $this->runner ?? new ExplainRunner;
@@ -114,7 +117,10 @@ final class MissingIndexDetector implements Detector
             return null; // primary-key lookup, or no predicate an index could serve
         }
 
-        $plan = $runner->explain($connection, $sql, (array) ($first->meta['bindings'] ?? []));
+        // With the raw values the plan is the one the query really got; stored bindings may be redacted or absent
+        // (NULL parameters can turn a filter into an impossible WHERE and hide the scan).
+        $replay = $this->rawReplay($spans);
+        $plan = $runner->explain($connection, $replay[0] ?? $sql, $replay[1] ?? (array) ($first->meta['bindings'] ?? []));
         if ($plan === null || ! $plan['full_scan'] || $plan['table'] === null) {
             return null;
         }
@@ -179,7 +185,7 @@ final class MissingIndexDetector implements Detector
                 $totalMs,
                 $callSite,
                 $spanIds,
-                ['table' => $unused['table'], 'index' => $unused['index'], 'index_columns' => $unused['columns'], 'used_key' => $unused['used_key'], 'scanned_table' => $scanned, 'plan' => $summary] + $this->withReturned($meta, $runner, $connection, $first),
+                ['table' => $unused['table'], 'index' => $unused['index'], 'index_columns' => $unused['columns'], 'used_key' => $unused['used_key'], 'scanned_table' => $scanned, 'plan' => $summary] + $this->withReturned($meta, $runner, $connection, $spans),
                 "The optimizer chose a different plan (full scan on {$scanned}). Check it with EXPLAIN ANALYZE, force the order with a join-order hint, or refresh statistics with ANALYZE TABLE {$unused['table']}.".$projection,
             );
         }
@@ -194,7 +200,7 @@ final class MissingIndexDetector implements Detector
                 $totalMs,
                 $callSite,
                 $spanIds,
-                ['table' => $scanned, 'columns' => [], 'or_across_tables' => true, 'plan' => $summary, 'rows' => $plan['rows']] + $this->withReturned($meta, $runner, $connection, $first),
+                ['table' => $scanned, 'columns' => [], 'or_across_tables' => true, 'plan' => $summary, 'rows' => $plan['rows']] + $this->withReturned($meta, $runner, $connection, $spans),
                 self::OR_MESSAGE.$projection,
             );
         }
@@ -217,7 +223,7 @@ final class MissingIndexDetector implements Detector
             $totalMs,
             $callSite,
             $spanIds,
-            ['table' => $scanned, 'columns' => $suggestion['columns'], 'plan' => $summary, 'rows' => $plan['rows']] + $this->withReturned($meta, $runner, $connection, $first),
+            ['table' => $scanned, 'columns' => $suggestion['columns'], 'plan' => $summary, 'rows' => $plan['rows']] + $this->withReturned($meta, $runner, $connection, $spans),
             ($suggestion['columns'] === []
                 ? 'The filtered columns have too few distinct values for an index on them to help ('.implode(', ', $suggestion['skipped']).'); look at the rest of the query'
                 : 'Consider an index on ('.implode(', ', $suggestion['columns']).')').$projection,
@@ -518,22 +524,37 @@ final class MissingIndexDetector implements Detector
     }
 
     /**
-     * Rows the query returns, measured with a second, time-limited run. Opt-in (explain_analyze), capped per trace,
-     * and only when the captured bindings are complete: redacted or truncated values would measure a different query.
+     * Rows the query returns, measured with a second, time-limited run. Opt-in (explain_analyze) and capped per
+     * trace. The replay uses the raw bindings the span held in memory; without them it falls back to the stored
+     * bindings, and only when those are complete: redacted or truncated values would measure a different query.
      *
      * @param  array<string, mixed>  $meta
+     * @param  list<Span>  $spans
      * @return array<string, mixed>
      */
-    private function withReturned(array $meta, PlanSource $runner, ?string $connection, Span $first): array
+    private function withReturned(array $meta, PlanSource $runner, ?string $connection, array $spans): array
     {
         if (! ($this->config['explain_analyze'] ?? false)) {
             return $meta;
         }
         $analyzer = $this->analyzer ?? ($runner instanceof AnalyzeSource ? $runner : null);
+        if ($analyzer === null) {
+            return $meta + ['rows_returned_why' => 'unsupported'];
+        }
+        if ($this->analyzed >= max(0, (int) ($this->config['explain_analyze_max'] ?? 3))) {
+            return $meta + ['rows_returned_why' => 'budget'];
+        }
+
+        $first = $spans[0];
         $sql = (string) $first->meta['sql'];
-        $bindings = (array) ($first->meta['bindings'] ?? []);
-        if ($analyzer === null || $this->analyzed >= max(0, (int) ($this->config['explain_analyze_max'] ?? 3)) || ! $this->completeBindings($sql, $bindings)) {
-            return $meta;
+        $replay = $this->rawReplay($spans);
+        if ($replay !== null) {
+            [$sql, $bindings] = $replay;
+        } else {
+            $bindings = (array) ($first->meta['bindings'] ?? []);
+            if (! $this->completeBindings($sql, $bindings)) {
+                return $meta + ['rows_returned_why' => 'no_bindings'];
+            }
         }
 
         $this->analyzed++;
@@ -542,8 +563,32 @@ final class MissingIndexDetector implements Detector
         } catch (Throwable) {
             // the measurement is optional
         }
+        if ($meta['rows_returned'] === null) {
+            $why = method_exists($analyzer, 'failure') ? $analyzer->failure() : null;
+            $meta['rows_returned_why'] = in_array($why, ['timeout', 'unsupported', 'parse_failed'], true) ? $why : 'failed';
+        }
 
         return $meta;
+    }
+
+    /**
+     * The first span of the shape that still holds its raw bindings, with the SQL those bindings belong to (the
+     * shape ignores IN-list length, so spans of one shape can differ in placeholder count).
+     *
+     * @param  list<Span>  $spans
+     * @return array{0: string, 1: array<int|string, mixed>}|null
+     */
+    private function rawReplay(array $spans): ?array
+    {
+        foreach ($spans as $span) {
+            $raw = $span->rawBindings();
+            $own = (string) ($span->meta['sql'] ?? '');
+            if ($raw !== null && substr_count($own, '?') === count($raw)) {
+                return [$own, $raw];
+            }
+        }
+
+        return null;
     }
 
     /** @param array<int|string, mixed> $bindings */

@@ -26,6 +26,24 @@ abstract class MatrixTestCase extends TestCase
 
     protected const TABLES = ['mx_items', 'mx_orders', 'mx_tickets'];
 
+    /** @var array<string, mixed> lantern.* config applied before providers register; non-empty also switches Lantern on */
+    protected array $lantern = [];
+
+    protected function resolveApplicationConfiguration($app)
+    {
+        parent::resolveApplicationConfiguration($app);
+
+        if ($this->lantern === []) {
+            return;
+        }
+        $app['config']->set('lantern.enabled', true);
+        $app['config']->set('lantern.kill_switch', false);
+        $app['config']->set('lantern.app_paths', [dirname(__DIR__, 3)]);
+        foreach ($this->lantern as $key => $value) {
+            $app['config']->set('lantern.'.$key, $value);
+        }
+    }
+
     protected static function driver(): ?string
     {
         $db = getenv('LANTERN_TEST_DB');

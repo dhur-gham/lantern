@@ -33,11 +33,13 @@ Requirements for the agent commands (`issues`, `issue`, `trace`, `diff`, `check`
 
 List detected issues.
 
-Flags: `--type=` (`n_plus_one|lazy_load|duplicate_query|slow_query|missing_index|index_not_chosen|plan_flip|memory_hog`), `--severity=` (`critical|warning|info`; aliases high, error, warn, medium, low), `--sort=total_ms|occurrences|last_seen` (default `total_ms`), `--since=`, `--path=`, `--route=`, `--status=` (match the trace that last recorded each issue), `--app=`, `--all-apps`, `--limit=10` (1-500), `--offset=0`, `--fields=` (comma list), `--full` (all fields including `evidence`), `--format`, `--pretty`.
+Flags: `--type=` (`n_plus_one|lazy_load|duplicate_query|slow_query|missing_index|index_not_chosen|plan_flip|memory_hog`), `--severity=` (`critical|warning|info`; aliases high, error, warn, medium, low), `--sort=total_ms|occurrences|last_seen` (default `total_ms`), `--since=`, `--path=`, `--route=`, `--status=` (match the trace that last recorded each issue), `--app=`, `--all-apps`, `--include-resolved`, `--resolved`, `--limit=10` (1-500), `--offset=0`, `--fields=` (comma list), `--full` (all fields including `evidence`), `--format`, `--pretty`.
+
+Resolved issues: an issue is marked resolved when a later trace runs its query shape (same query and call-site file and function, whatever the line) without producing the finding again (a run with a smaller `IN (...)` list and unchanged SQL does not count), so `lantern:issues` stops listing a problem you have fixed. Resolved issues are hidden by default; `--include-resolved` lists both and `--resolved` lists only them (using both together is a usage error). If the finding fires again the issue reopens. Plan based findings (`missing_index`, `index_not_chosen`, `plan_flip`) resolve only on runs where `explain` is on and the detector examined the query; `duplicate_query`, `lazy_load` and `memory_hog` are never resolved automatically. A trace that hit `thresholds.max_issues_per_trace` resolves nothing. Needs the `…_add_resolved_state_to_lantern_issues_table` migration; before it has run, issues are always open.
 
 Schema `lantern.issues`: `generated_at`; `total` matching; `returned`; `offset`; `truncated`; `next_offset` (when truncated); `total_capped` (total is a lower bound); `next` (command for the first issue); `hint` (empty or truncated results); `issues[]`.
 
-Issue fields: `id` (stable fingerprint), `type`, `severity`, `title`, `call_site` (`file`, `line`, optional `function`), `occurrences`, `count_total` (total repeats), `total_ms`, `max_ms`, `suggestion` (a hint, not a patch), `first_seen`, `last_seen`, `related_trace_ids`, `evidence`. Default fields: `id type severity title call_site occurrences total_ms suggestion`.
+Issue fields: `id` (stable fingerprint), `type`, `severity`, `status` (`open` or `resolved`), `title`, `call_site` (`file`, `line`, optional `function`), `occurrences`, `count_total` (total repeats), `total_ms`, `max_ms`, `suggestion` (a hint, not a patch), `first_seen`, `last_seen`, `resolved_at` (null while open), `related_trace_ids`, `evidence`. Default fields: `id type severity status title call_site occurrences total_ms suggestion`.
 
 ```
 php artisan lantern:issues --format=json --type=n_plus_one --limit=5
@@ -49,7 +51,7 @@ One issue with evidence. `key` is an id or a unique prefix of at least 6 charact
 
 Flags: `--with-bindings` (masked values instead of type placeholders; local debugging only), `--fields=`, `--format`, `--pretty`.
 
-Schema `lantern.issue`: `issue` (all fields above) and `next`. `issue.evidence`: `trace_id` (use as BEFORE for diff), `sample_sql` (null when equal to `sql_shape`), `sql_shape` (normalized SQL), `bindings`, `parent`, `avg_ms`. For `missing_index` and `index_not_chosen` findings it also carries, when known: `rows_read` (estimated rows the scans read), `rows_returned` and `read_ratio` (rows read per row returned; only when the returned count is known), `tables` (per table: `table rows key type`), `projected` (scan size here against production: `table local_rows production_rows factor`) and `schema_note` (indexes production has that the local schema lacks). Absent fields are omitted.
+Schema `lantern.issue`: `issue` (all fields above, including `status`) and `next`; a resolved issue has a `hint` instead of `next`. `issue.evidence`: `trace_id` (use as BEFORE for diff), `sample_sql` (null when equal to `sql_shape`), `sql_shape` (normalized SQL), `bindings`, `parent`, `avg_ms`. For `missing_index` and `index_not_chosen` findings it also carries, when known: `rows_read` (estimated rows the scans read), `rows_returned` and `read_ratio` (rows read per row returned; only when the returned count is known; otherwise `rows_returned_why` says why: `budget` when `explain_analyze_max` was used up by slower queries, `no_bindings` when the values were unavailable, `timeout` when the replay hit `explain_analyze_timeout_ms` (raise it), `parse_failed` when the engine's answer could not be read, `failed` when it errored or was not allowed, `unsupported` when no replay is available), `tables` (per table: `table rows key type`), `projected` (scan size here against production: `table local_rows production_rows factor`) and `schema_note` (indexes production has that the local schema lacks). Absent fields are omitted.
 
 ## lantern:trace {id?}
 
@@ -86,6 +88,8 @@ Flags: `--max-queries=`, `--max-ms=` (per trace), `--fail-on=critical|warning|in
 
 Baseline file: `{"schema_version":1,"issues":["<id>"]}`.
 
+Resolved issues never fail the gate, including when an older inspected trace still lists the finding and a later clean run resolved it (see [lantern:issues](#lanternissues)).
+
 Schema `lantern.check`: `pass`, `exit_code`, `thresholds`, `scope` (`route since traces_checked issues_checked`), `violation_count`, `truncated`, `violations[]`, `next` (when failing), `hint`. A violation is `{rule: max_queries|max_ms, limit, actual, trace_id, route}` or `{rule: issue|new_issue, issue_id, type, severity, title, call_site}`.
 
 Exit 0 pass, 1 violations, 2 usage/config (bad flag, missing baseline), 3 nothing recorded.
@@ -98,11 +102,11 @@ php artisan lantern:check --baseline=lantern-baseline.json --no-new-issues
 
 ## lantern:probe {key}
 
-Re-run EXPLAIN for an issue's query with its longest `IN (...)` list resized, to see where the optimizer changes plan. Real ids are read from the filtered column (a `select distinct ... limit`); when the column or table cannot be resolved, ids 1..N are used (`ids_source: synthetic`). The query itself is never executed, only EXPLAIN.
+Re-run EXPLAIN for an issue's query with its longest `IN (...)` list resized, to see where the optimizer changes plan. The lists are filled with the most frequent values of the filtered column (one grouped, read-only read ordered by row count, `NULL` skipped), so even a list of one holds a value that has plenty of rows; each smaller list is a prefix of the larger ones. A value with few or no rows gets a different plan from a typical one and would report a change that does not exist. When the column or table cannot be resolved, or has no rows, the numbers 1..N are used instead (`ids_source: synthetic`) and the output says so in `ids_note`. The query itself is never executed, only EXPLAIN.
 
 Flags: `--in-sizes=1,7,20,41,100` (1 to 12 integers between 1 and 5000), `--format=json`, `--pretty`. `key` is an id or a unique prefix of at least 6 characters; the issue needs a stored trace whose query has an `IN (...)` list (a `plan_flip`, `slow_query` or `n_plus_one` finding, for example).
 
-Schema `lantern.probe`: `issue_id`, `sql_shape`, `connection`, `table`, `column`, `ids_source` (`table|synthetic`), `verdict` (`stable|plan_changes`), `plan_changes[]` (`from_size`, `to_size`, `from`, `to`), `sizes[]` (`in_size` actually used, `requested`, `plan {table key rows full_scan possible_keys summary}`), `hint`. When the table has fewer distinct ids than requested, `in_size` is lower than `requested`. Bindings and ids are not printed.
+Schema `lantern.probe`: `issue_id`, `sql_shape`, `connection`, `table`, `column`, `ids_source` (`frequent_values|synthetic`), `verdict` (`stable|plan_changes`), `plan_changes[]` (`from_size`, `to_size`, `from`, `to`), `sizes[]` (`in_size` actually used, `requested`, `plan {table key rows full_scan possible_keys summary}`), `hint`, and `ids_note` (only with `synthetic`). When the table has fewer distinct values than requested, `in_size` is lower than `requested`. Bindings and values are not printed.
 
 Exit 0 on success, 2 for a bad `--in-sizes`, an unknown issue, a query with no `IN (...)` list, or a connection where EXPLAIN is unavailable.
 

@@ -18,6 +18,7 @@ use Illuminate\Foundation\Http\Events\RequestHandled;
 use Illuminate\Log\Events\MessageLogged;
 use Illuminate\Queue\Events\JobFailed;
 use Illuminate\Queue\Events\JobProcessed;
+use Lantern\Detection\Explain\ExplainRunner;
 use Lantern\Query\CallSiteResolver;
 use Lantern\Query\Fingerprinter;
 use Lantern\Query\InListSize;
@@ -42,6 +43,17 @@ use WeakMap;
  */
 final class QueryInstrumentation
 {
+    private const MAX_KEPT_SHAPES = 25;
+
+    private const MAX_KEPT_VALUE_BYTES = 8192;
+
+    private const MAX_KEPT_QUERY_BYTES = 65536;
+
+    private ?string $keptTrace = null;
+
+    /** @var array<string, array{0: \WeakReference<\Lantern\Trace\Span>, 1: float}> shapes whose raw bindings are held in the current trace, with the span and its time */
+    private array $kept = [];
+
     /** @var WeakMap<Connection, true> */
     private WeakMap $hooked;
 
@@ -292,6 +304,10 @@ final class QueryInstrumentation
 
         $span = $recorder->recordClosed(SpanType::Query, mb_substr($normalized, 0, 80), $startNs, $endNs, $meta, $site);
 
+        if ($extra['failed'] === false) {
+            $this->keepRawBindings($span, $recorder, $sql, $fingerprint, (array) $slot['bindings'], (float) ($extra['time_ms'] ?? 0));
+        }
+
         if ($track) {
             $this->early[$fingerprint][] = $span;
         }
@@ -300,6 +316,65 @@ final class QueryInstrumentation
                 $prior->callSite = $site;
             }
         }
+    }
+
+    /**
+     * explain_analyze replays a query with its real values, but stored bindings are redacted or absent by default.
+     * The raw values ride on the span in memory only (never in meta, so never persisted or emitted), for the first
+     * SELECT of each shape, bounded in count and size, and are dropped once the detectors have run. When the count
+     * is used up, a slow query takes the place of the fastest shape held, so a heavy request still keeps the
+     * bindings of its slowest queries.
+     *
+     * @param  array<int|string, mixed>  $bindings
+     */
+    private function keepRawBindings(\Lantern\Trace\Span $span, Recorder $recorder, string $sql, string $fingerprint, array $bindings, float $ms = 0.0): void
+    {
+        if (! $this->config('explain', false) || ! $this->config('explain_analyze', false) || ! ExplainRunner::isSelect($sql)) {
+            return;
+        }
+
+        $traceId = $recorder->trace()?->id;
+        if ($traceId !== $this->keptTrace) {
+            $this->keptTrace = $traceId;
+            $this->kept = [];
+        }
+        if (isset($this->kept[$fingerprint])) {
+            return;
+        }
+        $evict = null;
+        if (count($this->kept) >= self::MAX_KEPT_SHAPES) {
+            $evict = array_key_first($this->kept);
+            foreach ($this->kept as $fp => [, $heldMs]) {
+                if ($heldMs < $this->kept[$evict][1]) {
+                    $evict = $fp;
+                }
+            }
+            if ($ms < (float) $this->config('thresholds.slow_query_ms', 100) || $ms <= $this->kept[$evict][1]) {
+                return;
+            }
+        }
+
+        $bytes = 0;
+        foreach ($bindings as $value) {
+            $size = match (true) {
+                $value === null, is_bool($value), is_int($value), is_float($value) => 8,
+                is_string($value) => strlen($value),
+                $value instanceof \DateTimeInterface => 32,
+                $value instanceof \Stringable => strlen((string) $value),
+                default => null,
+            };
+            $bytes += (int) $size;
+            if ($size === null || $size > self::MAX_KEPT_VALUE_BYTES || $bytes > self::MAX_KEPT_QUERY_BYTES) {
+                return;
+            }
+        }
+
+        if ($evict !== null) {
+            $this->kept[$evict][0]->get()?->releaseRawBindings();
+            unset($this->kept[$evict]);
+        }
+        $this->kept[$fingerprint] = [\WeakReference::create($span), $ms];
+        $span->keepRawBindings($bindings);
     }
 
     private function lazy(): bool

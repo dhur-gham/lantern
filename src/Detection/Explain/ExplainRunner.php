@@ -24,6 +24,8 @@ use Throwable;
  */
 final class ExplainRunner implements AnalyzeSource, PlanSource
 {
+    private ?string $failure = null;
+
     public function __construct(private readonly ?DatabaseManager $db = null)
     {
     }
@@ -90,15 +92,26 @@ final class ExplainRunner implements AnalyzeSource, PlanSource
         ) !== 1;
     }
 
+    /** Why the last rowsReturned() gave null: timeout, not_replayable, unsupported or failed. */
+    public function failure(): ?string
+    {
+        return $this->failure;
+    }
+
     public function rowsReturned(?string $connectionName, string $sql, array $bindings = [], int $timeoutMs = 2000): ?int
     {
+        $this->failure = null;
         try {
             if (! self::isReplayable($sql)) {
+                $this->failure = 'not_replayable';
+
                 return null;
             }
 
             $connection = ($this->db ?? app('db'))->connection($connectionName);
             if (! $connection instanceof Connection) {
+                $this->failure = 'unsupported';
+
                 return null;
             }
 
@@ -106,16 +119,55 @@ final class ExplainRunner implements AnalyzeSource, PlanSource
             $params = $this->params($connection, $sql, $bindings);
             $pdo = $connection->getReadPdo();
 
-            return match ($connection->getDriverName()) {
+            $rows = match ($connection->getDriverName()) {
                 'pgsql' => $this->pgsqlReturned($pdo, $sql, $params, $timeoutMs),
                 'mysql', 'mariadb' => str_contains((string) $pdo->getAttribute(\PDO::ATTR_SERVER_VERSION), 'MariaDB')
                     ? $this->mariadbReturned($pdo, $sql, $params, $timeoutMs)
                     : $this->mysqlReturned($pdo, $sql, $params, $timeoutMs),
                 default => null,
             };
-        } catch (Throwable) {
+            if ($rows === null) {
+                $this->failure ??= in_array($connection->getDriverName(), ['pgsql', 'mysql', 'mariadb'], true) ? 'failed' : 'unsupported';
+            }
+
+            return $rows;
+        } catch (Throwable $e) {
+            $this->failure = self::timedOut($e) ? 'timeout' : 'failed';
+
             return null;
         }
+    }
+
+    /** The engines' own "query ran too long" errors: MySQL 3024, MariaDB 1969, PostgreSQL 57014. */
+    private static function timedOut(Throwable $e): bool
+    {
+        return preg_match('/maximum statement execution time|max_statement_time|statement timeout|canceling statement|query execution was interrupted/i', $e->getMessage()) === 1
+            || in_array((string) $e->getCode(), ['57014', '3024', '1969', 'HY000'], true) && stripos($e->getMessage(), 'time') !== false;
+    }
+
+    /**
+     * Put a MAX_EXECUTION_TIME hint on a SELECT. A query that already starts with an optimizer hint block keeps its
+     * hints and gets the limit merged into that block (MySQL only reads the first one); an existing
+     * MAX_EXECUTION_TIME is kept when it is the tighter one.
+     *
+     * @return array{0: string, 1: int}|null the SQL and the limit that applies, or null when it cannot be placed
+     */
+    public static function withExecutionLimit(string $sql, int $timeoutMs): ?array
+    {
+        if (preg_match('/^(\s*select)\b(\s*)\/\*\+(.*?)\*\//is', $sql, $m) === 1) {
+            $body = trim($m[3]);
+            if (preg_match('/MAX_EXECUTION_TIME\s*\(\s*(\d+)\s*\)/i', $body, $t) === 1) {
+                $timeoutMs = min($timeoutMs, max(1, (int) $t[1]));
+                $body = trim((string) preg_replace('/MAX_EXECUTION_TIME\s*\(\s*\d+\s*\)/i', '', $body, 1));
+            }
+            $merged = 'MAX_EXECUTION_TIME('.$timeoutMs.')'.($body === '' ? '' : ' '.$body);
+
+            return [$m[1].' /*+ '.$merged.' */'.substr($sql, strlen($m[0])), $timeoutMs];
+        }
+
+        $hinted = preg_replace('/^(\s*select)\b/i', '$1 /*+ MAX_EXECUTION_TIME('.$timeoutMs.') */', $sql, 1, $count);
+
+        return $count === 1 && is_string($hinted) ? [$hinted, $timeoutMs] : null;
     }
 
     /**
@@ -126,27 +178,53 @@ final class ExplainRunner implements AnalyzeSource, PlanSource
      */
     private function mysqlReturned(\PDO $pdo, string $sql, array $params, int $timeoutMs): ?int
     {
-        $hinted = preg_replace('/^(\s*select)\b(?!\s*\/\*\+)/i', '$1 /*+ MAX_EXECUTION_TIME('.$timeoutMs.') */', $sql, 1, $count);
-        if ($count !== 1 || ! is_string($hinted)) {
-            return null; // parenthesised, or it already carries its own hints
+        $limited = self::withExecutionLimit($sql, $timeoutMs);
+        if ($limited === null) {
+            return null; // parenthesised, so there is no place to put the hint
         }
+        [$hinted, $timeoutMs] = $limited;
 
         $statement = $pdo->prepare('EXPLAIN ANALYZE '.$hinted);
         $statement->execute($params);
         $rows = $statement->fetchAll(\PDO::FETCH_ASSOC);
         $statement->closeCursor();
 
-        $top = strtok((string) (array_values($rows[0] ?? [])[0] ?? ''), "\n");
+        [$count, $this->failure] = self::readAnalyzedTree((string) (array_values($rows[0] ?? [])[0] ?? ''), $timeoutMs);
+
+        return $count;
+    }
+
+    /**
+     * Rows returned according to a MySQL EXPLAIN ANALYZE tree, or why it cannot be told: `timeout` for a run the time
+     * limit interrupted, `parse_failed` for an answer in a shape this does not know.
+     *
+     * An interrupted run ends quietly, with a warning native prepared statements cannot show. Its top nodes read
+     * "(never executed)" while the nodes below carry the time spent, and when the top node did finish, its own end
+     * time reaching the limit is the tell; the row counts of either are partial.
+     *
+     * @return array{0: ?int, 1: ?string}
+     */
+    public static function readAnalyzedTree(string $plan, int $timeoutMs): array
+    {
+        $top = strtok($plan, "\n");
         if (! is_string($top) || preg_match('/\(actual time=[\d.e+-]+\.\.([\d.e+-]+) rows=([\d.e+-]+) loops=(\d+)\)/i', $top, $m) !== 1) {
-            return null;
+            return [null, (is_string($top) && str_contains($top, 'never executed')) || self::spentAtLeast($plan, $timeoutMs * 0.9) ? 'timeout' : 'parse_failed'];
         }
-        // an interrupted run ends quietly, with a warning native prepared statements cannot show: the top node's
-        // own end time reaching the limit is the tell, and its row counts are partial
         if ((float) $m[1] >= $timeoutMs * 0.9) {
-            return null;
+            return [null, 'timeout'];
         }
 
-        return (int) round((float) $m[2] * (int) $m[3]);
+        return [(int) round((float) $m[2] * (int) $m[3]), null];
+    }
+
+    /** Whether any node of an EXPLAIN ANALYZE tree reports an end time of at least $ms. */
+    private static function spentAtLeast(string $plan, float $ms): bool
+    {
+        if (preg_match_all('/\(actual time=[\d.e+-]+\.\.([\d.e+-]+) /i', $plan, $all) < 1) {
+            return false;
+        }
+
+        return max(array_map('floatval', $all[1])) >= $ms;
     }
 
     /**

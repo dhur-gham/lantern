@@ -73,7 +73,7 @@ final class LanternMcpTest extends AgentTestCase
     public function test_input_schemas(): void
     {
         $issues = (new LanternIssues)->toArray()['inputSchema'];
-        $this->assertSame(['type', 'severity', 'sort', 'since', 'path', 'route', 'status', 'app', 'all_apps', 'limit', 'offset', 'full'], array_keys((array) $issues['properties']));
+        $this->assertSame(['type', 'severity', 'sort', 'since', 'path', 'route', 'status', 'app', 'all_apps', 'include_resolved', 'resolved', 'limit', 'offset', 'full'], array_keys((array) $issues['properties']));
         $this->assertSame(50, $issues['properties']['limit']['maximum']);
         $this->assertSame(['critical', 'warning', 'info'], $issues['properties']['severity']['enum']);
 

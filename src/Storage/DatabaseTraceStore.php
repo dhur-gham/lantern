@@ -8,6 +8,7 @@ use Illuminate\Database\Connection;
 use Illuminate\Database\ConnectionResolverInterface;
 use Illuminate\Database\QueryException;
 use Illuminate\Database\Query\Expression;
+use Lantern\Agent\Findings;
 use Lantern\Detection\Issue;
 use Lantern\Instrumentation\Query\QuerySuspend;
 use Lantern\Trace\Trace;
@@ -17,7 +18,10 @@ final class DatabaseTraceStore implements TraceStore
     private const JSON_FLAGS = PayloadCodec::JSON_FLAGS;
 
     /** Set once a write fails because the `app` column is missing (package upgraded, migration not yet run). */
-    private bool $legacySchema = false;
+    private bool $legacyApp = false;
+
+    /** Same for the `shape` and `resolved_at` columns of lantern_issues. */
+    private bool $legacyResolve = false;
 
     public function __construct(
         private readonly ConnectionResolverInterface $db,
@@ -50,14 +54,21 @@ final class DatabaseTraceStore implements TraceStore
                 'created_at' => $now,
             ];
 
-            try {
-                $this->write($conn, $row, $issues, $startedAt, ! $this->legacySchema);
-            } catch (QueryException $e) {
-                if ($this->legacySchema || ! preg_match('/no column named app\b|unknown column \'app\'|column "app" of relation/i', $e->getMessage())) {
-                    throw $e;
+            // A column added by a migration that has not run yet is dropped from the write, once per column group.
+            while (true) {
+                try {
+                    $this->write($conn, $row, $issues, $startedAt, $trace, $now);
+
+                    return;
+                } catch (QueryException $e) {
+                    if (! $this->legacyApp && self::missingColumn($e->getMessage(), ['app'])) {
+                        $this->legacyApp = true;
+                    } elseif (! $this->legacyResolve && self::missingColumn($e->getMessage(), ['shape', 'resolved_at', 'in_size', 'sql_hash'])) {
+                        $this->legacyResolve = true;
+                    } else {
+                        throw $e;
+                    }
                 }
-                $this->legacySchema = true;
-                $this->write($conn, $row, $issues, $startedAt, false);
             }
         });
     }
@@ -66,24 +77,84 @@ final class DatabaseTraceStore implements TraceStore
      * @param array<string, mixed> $row
      * @param list<Issue> $issues
      */
-    private function write(Connection $conn, array $row, array $issues, string $startedAt, bool $withApp): void
+    private function write(Connection $conn, array $row, array $issues, string $startedAt, Trace $trace, string $now): void
     {
+        $withApp = ! $this->legacyApp;
+        $withResolve = ! $this->legacyResolve;
         $app = $withApp ? $this->str($this->app, 100) : null;
         if ($withApp) {
             $row['app'] = $app;
         }
 
-        $conn->transaction(function () use ($conn, $row, $issues, $startedAt, $withApp, $app): void {
+        $conn->transaction(function () use ($conn, $row, $issues, $startedAt, $trace, $now, $withApp, $withResolve, $app): void {
             $conn->table('lantern_traces')->insert($row);
 
-            $rows = $this->issueRows($issues, $startedAt, (string) $row['id']);
+            $rows = $this->issueRows($issues, $startedAt, (string) $row['id'], $withResolve, $trace);
             if ($rows !== []) {
                 if ($withApp) {
                     $rows = array_map(fn (array $r): array => $r + ['app' => $app], $rows);
                 }
-                $conn->table('lantern_issues')->upsert($rows, ['issue_key'], $this->issueUpdate($conn, $withApp));
+                $conn->table('lantern_issues')->upsert($rows, ['issue_key'], $this->issueUpdate($conn, $withApp, $withResolve));
+            }
+
+            if ($withResolve) {
+                $this->resolveCleared($conn, $trace, $issues, $now);
             }
         });
+    }
+
+    /**
+     * Resolves open issues whose query shape ran in this trace without producing the finding. Runs in a savepoint so
+     * a failure here never costs the trace; only a missing column escapes, to switch the write to the old schema.
+     *
+     * @param list<Issue> $issues
+     */
+    private function resolveCleared(Connection $conn, Trace $trace, array $issues, string $now): void
+    {
+        try {
+            $conn->transaction(function () use ($conn, $trace, $issues, $now): void {
+                $config = (array) config('lantern', []);
+                $max = (int) ($config['thresholds']['max_issues_per_trace'] ?? 50);
+                if ($max > 0 && count($issues) >= $max) {
+                    return; // findings beyond the cap were dropped, so absence proves nothing
+                }
+
+                $fired = array_map(fn (Issue $i): string => Findings::shape($i->toArray()), $issues);
+                $candidates = array_diff_key(ClearedShapes::candidates($trace, $config), array_flip($fired));
+                $keys = array_map(fn (Issue $i): string => $i->key, $issues);
+                foreach (array_chunk(array_keys($candidates), 200) as $chunk) {
+                    $query = $conn->table('lantern_issues')->whereNull('resolved_at')->whereIn('shape', $chunk);
+                    if ($keys !== []) {
+                        $query->whereNotIn('issue_key', $keys);
+                    }
+                    $ids = [];
+                    foreach ($query->get(['issue_key', 'shape', 'in_size', 'sql_hash']) as $row) {
+                        $ran = $candidates[(string) $row->shape] ?? null;
+                        // a smaller IN list than the one that fired is another input, not a fix, unless the SQL itself changed
+                        $smaller = $ran !== null && $row->in_size !== null && $ran['in_size'] < (int) $row->in_size
+                            && ($row->sql_hash === null || in_array((string) $row->sql_hash, $ran['sql_hashes'], true));
+                        if (! $smaller) {
+                            $ids[] = $row->issue_key;
+                        }
+                    }
+                    if ($ids !== []) {
+                        $conn->table('lantern_issues')->whereIn('issue_key', $ids)->update(['resolved_at' => $now]);
+                    }
+                }
+            });
+        } catch (QueryException $e) {
+            if (self::missingColumn($e->getMessage(), ['shape', 'resolved_at'])) {
+                throw $e;
+            }
+        }
+    }
+
+    /** @param list<string> $columns */
+    private static function missingColumn(string $message, array $columns): bool
+    {
+        $names = implode('|', array_map(fn (string $c): string => preg_quote($c, '/'), $columns));
+
+        return preg_match('/(?:no column named |no such column: |unknown column \'|column ")(?:\w+\.)?(?:'.$names.')\b/i', $message) === 1;
     }
 
     public function find(string $id): ?array
@@ -118,9 +189,13 @@ final class DatabaseTraceStore implements TraceStore
      * @param list<Issue> $issues
      * @return list<array<string, mixed>>
      */
-    private function issueRows(array $issues, string $now, string $traceId): array
+    private function issueRows(array $issues, string $now, string $traceId, bool $withResolve, ?Trace $trace = null): array
     {
         $rows = [];
+        $spans = [];
+        foreach ($trace?->spans() ?? [] as $span) {
+            $spans[$span->id] = $span;
+        }
         foreach ($issues as $issue) {
             $max = (float) ($issue->meta['max_ms'] ?? ($issue->count > 0 ? $issue->totalMs / $issue->count : $issue->totalMs));
 
@@ -146,14 +221,37 @@ final class DatabaseTraceStore implements TraceStore
                 'first_seen' => $now,
                 'last_seen' => $now,
                 'last_trace_id' => $traceId,
-            ];
+            ] + ($withResolve ? ['shape' => $this->str(Findings::shape($issue->toArray()), 64), 'resolved_at' => null] + $this->queryFacts($issue, $spans) : []);
         }
 
         return array_values($rows);
     }
 
+    /**
+     * The IN list size and SQL text of the query a finding fired on, so a later run with a smaller list or the same
+     * SQL is not mistaken for a fix. Null for findings that are not about one query.
+     *
+     * @param array<int, \Lantern\Trace\Span> $spans
+     * @return array{in_size: ?int, sql_hash: ?string}
+     */
+    private function queryFacts(Issue $issue, array $spans): array
+    {
+        $size = null;
+        $hash = null;
+        foreach ($issue->spanIds as $id) {
+            $m = isset($spans[$id]) ? $spans[$id]->meta : [];
+            if (($m['kind'] ?? null) === 'transaction' || ! is_string($m['sql'] ?? null)) {
+                continue;
+            }
+            $hash ??= ClearedShapes::sqlHash($m['sql']);
+            $size = max($size ?? 0, is_int($m['in_size'] ?? null) ? $m['in_size'] : 0);
+        }
+
+        return ['in_size' => $size, 'sql_hash' => $hash];
+    }
+
     /** @return array<string, Expression> */
-    private function issueUpdate(Connection $conn, bool $withApp = false): array
+    private function issueUpdate(Connection $conn, bool $withApp = false, bool $withResolve = false): array
     {
         $g = $conn->getQueryGrammar();
         $table = $g->wrapTable('lantern_issues');
@@ -183,6 +281,15 @@ final class DatabaseTraceStore implements TraceStore
         ];
         if ($withApp) {
             $update['app'] = new Expression('coalesce('.$new('app').', '.$cur('app').')');
+        }
+        if ($withResolve) {
+            // a finding that fires again reopens the issue
+            $update['shape'] = new Expression($new('shape'));
+            // the largest input the finding fired on stays the baseline a later clean run is judged against
+            $keep = 'case when '.$cur('in_size').' is not null and ('.$new('in_size').' is null or '.$new('in_size').' < '.$cur('in_size').') then ';
+            $update['sql_hash'] = new Expression($keep.$cur('sql_hash').' else '.$new('sql_hash').' end');
+            $update['in_size'] = new Expression($keep.$cur('in_size').' else '.$new('in_size').' end');
+            $update['resolved_at'] = new Expression('NULL');
         }
 
         return $update;

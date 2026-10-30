@@ -222,6 +222,8 @@ final class LifecycleInstrumentation
             $trace->meta['issue_count'] = count($issues);
         } catch (Throwable) {
             // analysis must never break the request
+        } finally {
+            $trace->releaseRawBindings();
         }
 
         $this->app->make(TraceSink::class)->push($trace);

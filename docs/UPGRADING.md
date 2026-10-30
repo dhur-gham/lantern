@@ -6,6 +6,18 @@ Lantern loads its migrations from the package, so `php artisan migrate` is enoug
 
 If your team applies schema changes by hand, print the SQL instead of migrating (see [Applying the schema by hand](#applying-the-schema-by-hand)).
 
+## 0.4.2
+
+**Schema.** One new migration, `2024_01_01_000006_add_resolved_state_to_lantern_issues_table`, adds nullable columns to `lantern_issues`: `resolved_at` and `shape` (indexed), plus `in_size` and `sql_hash`, and fills `shape` for existing `missing_index`, `index_not_chosen` and `plan_flip` rows so they can resolve without waiting to fire again. Run `php artisan migrate`, or print the SQL with `php artisan lantern:install --sql --since=0.4.2`. Until it has run, Lantern keeps storing traces and issues as before, issues are always shown as open, and `--resolved` lists nothing.
+
+**Fixed findings leave `lantern:issues`.** After a fix, `plan_flip`, `index_not_chosen` and the other query findings used to stay listed as open (usually critical) because only `lantern:diff` knew they were gone. A stored issue is now marked resolved when a later trace runs its query shape (same query, call-site file and function, whatever the line) without producing the finding, unless that run used a smaller `IN (...)` list than the one the finding fired on and the SQL text is the same (a smaller input is not a fix; a changed query, such as an added hint, is). It reopens if the finding fires again. Resolved issues are hidden from `lantern:issues` and do not fail `lantern:check`; list them with `--include-resolved` or `--resolved` (MCP `lantern_issues`: `include_resolved`, `resolved`). Issues have new `status` and `resolved_at` fields, and `status` is now in the default field list, so scripts that compared the default fields exactly need updating. Plan based findings resolve only on runs with `explain` on, and `duplicate_query`, `lazy_load` and `memory_hog` are not resolved automatically.
+
+**Behavior changes.**
+
+- `explain_analyze` now works with the default `capture_bindings` setting. In 0.4.1 it replayed a query only when its stored bindings were complete, and stored bindings are redacted or absent by default, so `rows_returned` stayed `null`. While `explain_analyze` is on, the real values of each query shape's first execution are kept in memory for the replay and for the plan `EXPLAIN`, then dropped when the trace has been analysed; they are never stored or shown. With the option off, nothing changes. Because the plan `EXPLAIN` now sees real values, a scan that was hidden by `NULL` parameters can start showing up as a finding.
+- On MySQL the replay's time limit is merged into a query's own `/*+ ... */` hint block instead of skipping queries that have one.
+- `lantern:probe` fills the `IN (...)` lists with the most frequent values of the filtered column instead of the lowest ones, and smaller lists are prefixes of larger ones. A value with few or no rows gets a different plan from a typical one, so probing with it could report a plan change that does not exist (for example from 1 to 7 values). `ids_source` is now `frequent_values` (was `table`) or `synthetic`; with `synthetic` the output adds an `ids_note`. Scripts that compared `ids_source` to `table` need the new value.
+
 ## 0.4.1
 
 **Schema.** One new migration, `2024_01_01_000005_add_sql_hash_to_lantern_plan_samples_table`, adds a nullable `sql_hash` column to `lantern_plan_samples`. Run `php artisan migrate`. Until it has run, plan-flip samples keep working but cannot tell that a query's SQL text changed.

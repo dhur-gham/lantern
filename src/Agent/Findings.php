@@ -10,9 +10,9 @@ final class Findings
 {
     public const VERSION = 1;
 
-    public const DEFAULT_FIELDS = ['id', 'type', 'severity', 'title', 'call_site', 'occurrences', 'total_ms', 'suggestion'];
+    public const DEFAULT_FIELDS = ['id', 'type', 'severity', 'status', 'title', 'call_site', 'occurrences', 'total_ms', 'suggestion'];
 
-    public const ALL_FIELDS = ['id', 'type', 'severity', 'title', 'call_site', 'occurrences', 'count_total', 'total_ms', 'max_ms', 'suggestion', 'first_seen', 'last_seen', 'related_trace_ids', 'evidence'];
+    public const ALL_FIELDS = ['id', 'type', 'severity', 'status', 'title', 'call_site', 'occurrences', 'count_total', 'total_ms', 'max_ms', 'suggestion', 'first_seen', 'last_seen', 'resolved_at', 'related_trace_ids', 'evidence'];
 
     /**
      * @param array<string, mixed> $row stored lantern_issues row (as returned by TraceQueries)
@@ -21,11 +21,13 @@ final class Findings
     public static function fromRow(array $row): array
     {
         $trace = $row['last_trace_id'] ?? null;
+        $resolvedAt = isset($row['resolved_at']) && $row['resolved_at'] !== '' ? (string) $row['resolved_at'] : null;
 
         return [
             'id' => (string) ($row['issue_key'] ?? ''),
             'type' => (string) ($row['type'] ?? ''),
             'severity' => (string) ($row['severity'] ?? ''),
+            'status' => $resolvedAt === null ? 'open' : 'resolved',
             'title' => (string) ($row['title'] ?? ''),
             'call_site' => self::site($row['call_site'] ?? null),
             'occurrences' => (int) ($row['occurrences'] ?? 0),
@@ -35,6 +37,7 @@ final class Findings
             'suggestion' => $row['suggestion'] ?? null,
             'first_seen' => $row['first_seen'] ?? null,
             'last_seen' => $row['last_seen'] ?? null,
+            'resolved_at' => $resolvedAt,
             'related_trace_ids' => is_string($trace) && $trace !== '' ? [$trace] : [],
         ];
     }

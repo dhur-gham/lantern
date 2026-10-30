@@ -24,6 +24,14 @@ final class Span
     /** @var array{file: string, line: int, function?: string}|null */
     public ?array $callSite = null;
 
+    /**
+     * Raw query bindings kept in memory only so explain_analyze can replay the query. Never part of meta or
+     * toArray(), so they cannot be persisted or emitted; released as soon as the detectors have run.
+     *
+     * @var array<int|string, mixed>|null
+     */
+    private ?array $rawBindings = null;
+
     public function __construct(
         public readonly int $id,
         public readonly ?int $parentId,
@@ -50,6 +58,23 @@ final class Span
     public function isStopped(): bool
     {
         return $this->endNs !== null;
+    }
+
+    /** @param array<int|string, mixed> $bindings */
+    public function keepRawBindings(array $bindings): void
+    {
+        $this->rawBindings = $bindings;
+    }
+
+    /** @return array<int|string, mixed>|null */
+    public function rawBindings(): ?array
+    {
+        return $this->rawBindings;
+    }
+
+    public function releaseRawBindings(): void
+    {
+        $this->rawBindings = null;
     }
 
     public function durationMs(): float

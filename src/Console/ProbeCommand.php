@@ -61,7 +61,9 @@ final class ProbeCommand extends AgentCommand
             'hint' => $result['plan_changes'] === []
                 ? 'The chosen plan is the same at every probed size. Compare timings with EXPLAIN ANALYZE on the real data.'
                 : 'The optimizer picks a different plan between the listed sizes. Try EXPLAIN ANALYZE, a join-order or index hint, ANALYZE TABLE, or keep the list below the change.',
-        ]);
+        ] + ($result['ids_source'] === 'synthetic' ? [
+            'ids_note' => 'The filtered column could not be resolved or has no rows, so the lists hold the numbers 1..N. Those may match no rows and give a plan a real list would not, so treat a change here with care.',
+        ] : []));
 
         return self::SUCCESS;
     }

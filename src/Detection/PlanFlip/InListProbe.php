@@ -11,7 +11,7 @@ use Lantern\Instrumentation\Query\QuerySuspend;
 use Lantern\Query\InListSize;
 use Throwable;
 
-/** Re-runs EXPLAIN for one query with its largest `IN (...)` list resized, filled with real ids when the column is found. */
+/** Re-runs EXPLAIN for one query with its largest `IN (...)` list resized, filled with the column's most frequent values when it is found (every smaller list is a prefix of the larger ones). */
 final class InListProbe
 {
     private const NOT_AN_ALIAS = 'where|join|inner|left|right|cross|full|outer|natural|on|using|group|order|limit|union|having|set|window';
@@ -35,7 +35,7 @@ final class InListProbe
         $list = array_reduce($lists, fn (?array $c, array $l) => $c === null || $l['count'] > $c['count'] ? $l : $c);
 
         [$table, $column] = $this->target($sql, $list['at'], $connection);
-        $ids = $table !== null && $column !== null ? $this->ids($connection, $table, $column, max($sizes)) : [];
+        $ids = $table !== null && $column !== null ? $this->frequentValues($connection, $table, $column, max($sizes)) : [];
 
         $rows = [];
         $samples = [];
@@ -64,7 +64,7 @@ final class InListProbe
         return [
             'table' => $table,
             'column' => $column,
-            'ids_source' => $ids !== [] ? 'table' : 'synthetic',
+            'ids_source' => $ids !== [] ? 'frequent_values' : 'synthetic',
             'sizes' => $rows,
             'plan_changes' => array_map(fn (array $c): array => [
                 'from_size' => $c['from']['in_size'],
@@ -139,12 +139,17 @@ final class InListProbe
         return [null, null];
     }
 
-    /** @return list<int|string> */
-    private function ids(?string $connection, string $table, string $column, int $limit): array
+    /**
+     * The most frequent non-null values of the column, most frequent first. A value that matches no or few rows gets a
+     * different plan from a typical one, so probing with arbitrary ids can report a flip that does not exist.
+     *
+     * @return list<int|string>
+     */
+    private function frequentValues(?string $connection, string $table, string $column, int $limit): array
     {
         try {
-            return QuerySuspend::run(fn () => DB::connection($connection)->table($table)
-                ->whereNotNull($column)->distinct()->orderBy($column)->limit($limit)->pluck($column)->all());
+            return array_values(QuerySuspend::run(fn () => DB::connection($connection)->table($table)
+                ->whereNotNull($column)->groupBy($column)->orderByRaw('count(*) desc')->orderBy($column)->limit($limit)->pluck($column)->all()));
         } catch (Throwable) {
             return [];
         }

@@ -35,21 +35,25 @@ final class Analyzer
     public function analyze(Trace $trace): array
     {
         $byKey = [];
-        foreach ($this->detectors as $detector) {
-            try {
-                $found = $detector->detect($trace);
-            } catch (Throwable) {
-                continue;
-            }
-
-            foreach ($found as $issue) {
-                if (! $issue instanceof Issue) {
+        try {
+            foreach ($this->detectors as $detector) {
+                try {
+                    $found = $detector->detect($trace);
+                } catch (Throwable) {
                     continue;
                 }
-                if (! isset($byKey[$issue->key]) || $issue->count > $byKey[$issue->key]->count) {
-                    $byKey[$issue->key] = $issue;
+
+                foreach ($found as $issue) {
+                    if (! $issue instanceof Issue) {
+                        continue;
+                    }
+                    if (! isset($byKey[$issue->key]) || $issue->count > $byKey[$issue->key]->count) {
+                        $byKey[$issue->key] = $issue;
+                    }
                 }
             }
+        } finally {
+            $trace->releaseRawBindings();
         }
 
         $issues = $this->mergeLazyLoads(array_values($byKey), $trace);
