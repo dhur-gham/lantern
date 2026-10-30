@@ -26,7 +26,7 @@ use Lantern\Trace\Recorder;
 
 class LanternServiceProvider extends ServiceProvider
 {
-    public const VERSION = '0.5.1';
+    public const VERSION = '0.6.0';
 
     /** Detectors added after 0.3: merged into a published `detectors` list that predates them. */
     public const ADDED_DETECTORS = [\Lantern\Detection\Detectors\PlanFlipDetector::class];
@@ -40,10 +40,27 @@ class LanternServiceProvider extends ServiceProvider
         // Readers (CLI, MCP, dashboard) use the configured storage connection even while tracing is off.
         $this->app->singleton(TraceQueries::class, fn ($app) => new TraceQueries($app['db'], $app['config']->get('lantern.storage.connection')));
 
+        $this->app->singleton(Recording::class, fn ($app) => new Recording($app));
+
         if (! $this->tracingEnabled()) {
             return;
         }
 
+        $this->registerTracing();
+    }
+
+    /** Turns tracing on for this process although the config has it off (lantern:run). */
+    public function enableForProcess(): void
+    {
+        $this->app['config']->set('lantern.enabled', true);
+        $this->app['config']->set('lantern.kill_switch', false);
+        if (! $this->app->bound(Recorder::class)) {
+            $this->registerTracing();
+        }
+    }
+
+    private function registerTracing(): void
+    {
         $this->app->scoped(Recorder::class);
         // Head sampling: single-execution processes decide once here (an unsampled one records nothing and registers
         // no hooks). Long-lived workers keep hooks registered and decide per execution at trace begin.

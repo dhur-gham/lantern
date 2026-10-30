@@ -6,6 +6,16 @@ Lantern loads its migrations from the package, so `php artisan migrate` is enoug
 
 If your team applies schema changes by hand, print the SQL instead of migrating (see [Applying the schema by hand](#applying-the-schema-by-hand)).
 
+## 0.6.0
+
+**No schema change.** Nothing to migrate.
+
+**New: record any code.** Lantern used to start a trace only for HTTP requests, queued jobs and Artisan commands. `Lantern::record('name', fn () => ...)` (facade `Lantern\Facades\Lantern`) now records whatever the closure runs as one trace, analysed and stored like a request: its queries, lazy loads and spans, with `file:line` for every finding. The trace has the route `record:<name>`, is always kept, and `context` (ids and small values, redacted and truncated like bindings) is stored with it. With Lantern off it only calls the closure, so probes can stay in place. Inside a request, job or command it is a child span and the enclosing trace is kept even when sampling would drop it.
+
+**New: `lantern:run`.** `php artisan lantern:run probes/edit-item.php --item=1` runs a script with the app booted and Lantern on for that process, even when `LANTERN_ENABLED` is off, and only when `APP_ENV=local`. Each `Lantern::record()` block becomes a trace; code outside blocks is not recorded. The script gets `$args` (every `--key=value`) and `$lantern`. The script's database writes are rolled back unless you pass `--commit`; the JSON reports `rolled_back`. Rolling back skips `afterCommit` callbacks and jobs dispatched after commit. `--repeat=N` reports medians per record name and `--diff=<trace id or name>` compares the first trace with a stored one. `lantern:run` is not an MCP tool because it executes code. See the [CLI reference](CLI.md#lanternrun).
+
+**Changed: Livewire trace routes.** Livewire update requests are named `livewire:<Component>::<method>` (batched calls joined with `+`; Filament schema calls append their first parameter), so `lantern:issues --route='livewire:*EditItem*'` finds them. Routes recorded by 0.5.x had the form `livewire:<Component>@<method>`; filters and `lantern:check --route=` that name the old form need updating. A new span type, `record`, appears in trace JSON.
+
 ## 0.5.1
 
 **Schema.** One new migration, `2024_01_01_000007_add_site_hash_to_lantern_issues_table`, adds a nullable `site_hash` column to `lantern_issues`. Run `php artisan migrate`, or print the SQL with `php artisan lantern:install --sql --since=0.5.1`. Until it has run, Lantern keeps working as before and findings are only resolved when their query runs clean (see below).
