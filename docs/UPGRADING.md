@@ -10,7 +10,7 @@ If your team applies schema changes by hand, print the SQL instead of migrating 
 
 **Schema.** One new migration, `2024_01_01_000007_add_site_hash_to_lantern_issues_table`, adds a nullable `site_hash` column to `lantern_issues`. Run `php artisan migrate`, or print the SQL with `php artisan lantern:install --sql --since=0.5.1`. Until it has run, Lantern keeps working as before and findings are only resolved when their query runs clean (see below).
 
-**A removed query now resolves its finding.** Until now a finding resolved only when its query shape ran again without producing it, so a fix that deleted the query left the finding open. It now also resolves when a later trace of the same route runs the finding's call-site function without the query and the call-site file has changed since the finding last fired (the file's content hash is stored on the finding). The same code skipping the query is a data difference, not a fix, and the finding stays open. Traces without a route are not used for this.
+**A removed query now resolves its finding.** Until now a finding resolved only when its query shape ran again without producing it, so a fix that deleted the query left the finding open. It now also resolves when a later trace of the same route runs the finding's call-site function without the query and the call-site file has changed since the finding last fired (the file's content hash is stored on the finding). The same code skipping the query is a data difference, not a fix, and the finding stays open. Job and command traces now carry a route (`job:<class>`, `command:<name>`), so this works for them too; traces without a route are not used for this. The route shows in `lantern:issues --route=` and `lantern:check --route=`.
 
 **Fixes.**
 

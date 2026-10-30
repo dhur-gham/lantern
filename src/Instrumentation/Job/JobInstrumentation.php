@@ -103,7 +103,7 @@ final class JobInstrumentation
             return;
         }
 
-        $trace = $recorder->begin($meta, null, SpanType::Job);
+        $trace = $recorder->begin($meta + ['route' => 'job:'.$name], null, SpanType::Job);
         $root = $trace->root();
         if ($root === null) {
             return;

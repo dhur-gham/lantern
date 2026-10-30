@@ -103,6 +103,11 @@ final class NPlusOneDetector implements Detector
 
         $where = substr($s, $pos);
 
+        // a row pinned by its own id is one row per statement, whatever else the WHERE filters on
+        if (preg_match('/\b(?:\w+\.)?(?:id|uuid)\s*=\s*(?:\?|\d|\x27)/', $where) === 1) {
+            return false;
+        }
+
         return preg_match('/\bin\s*\(\s*(select\b|[^)]*,)/', $where) === 1
             || preg_match('/\bbetween\b/', $where) === 1
             || preg_match('/\b(?:\w+\.)?id\s*(?:>=|<=|>|<)\s*[?\d]/', $where) === 1;

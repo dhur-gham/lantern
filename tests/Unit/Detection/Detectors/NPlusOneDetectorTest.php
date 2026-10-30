@@ -127,6 +127,22 @@ final class NPlusOneDetectorTest extends TestCase
         $this->assertCount(1, $this->det()->detect($this->trace()));
     }
 
+    public function test_an_in_list_next_to_an_id_equality_is_still_a_per_row_loop(): void
+    {
+        for ($i = 1; $i <= 6; $i++) {
+            $this->q('update `posts` set `x` = ? where `state` in (?, ?) and `id` = ?', [1, 'a', 'b', $i]);
+        }
+        $this->assertCount(1, $this->det()->detect($this->trace()));
+    }
+
+    public function test_a_scoping_foreign_key_equality_does_not_make_a_bulk_write_per_row(): void
+    {
+        for ($i = 0; $i < 6; $i++) {
+            $this->q('update `posts` set `x` = ? where `merchant_id` = ? and `id` in (?, ?, ?)', [1, 2, 3, 4, 5]);
+        }
+        $this->assertSame([], $this->det()->detect($this->trace()));
+    }
+
     public function test_paging_call_site_is_not_flagged(): void
     {
         for ($i = 0; $i < 8; $i++) {

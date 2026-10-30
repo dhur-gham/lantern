@@ -117,6 +117,17 @@ final class ResolvedIssuesTest extends AgentTestCase
         $this->assertNotNull($this->resolvedAt($issue->key));
     }
 
+    public function test_a_removed_query_in_a_job_resolves_by_its_job_route(): void
+    {
+        $issue = $this->slowIssue();
+        $this->persist($this->trace([['ms' => 300.0]], 'job:App\Jobs\HideMerchantItemsJob'), [$issue]);
+
+        $this->source('<?php // v2, the query is gone');
+        $this->persist($this->trace([['fp' => 'fp-other', 'ms' => 5.0, 'sql' => 'select * from "users"']], 'job:App\Jobs\HideMerchantItemsJob'));
+
+        $this->assertNotNull($this->resolvedAt($issue->key));
+    }
+
     public function test_an_absent_query_with_unchanged_code_stays_open_as_a_data_difference(): void
     {
         $issue = $this->slowIssue();
