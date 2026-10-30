@@ -15,7 +15,7 @@ If the `lantern` MCP server is connected (`php artisan mcp:start lantern`, needs
 
 JSON fields (JSON only on stdout; `schema_version` 1, `schema` e.g. `lantern.issues`):
 - `issues[].id` stable fingerprint, survives line changes. `type`: n_plus_one, lazy_load, duplicate_query, slow_query, missing_index, index_not_chosen, plan_flip, memory_hog.
-- `severity`: critical|warning|info.
+- `severity`: critical|warning|info. `status`: open|resolved. An issue whose query ran again without the finding is resolved and hidden from `lantern:issues` unless `--include-resolved` (or `--resolved`); it reopens if the finding fires again. Resolved issues never fail `lantern:check`.
 - `call_site.file` relative to base_path, `call_site.line` 1-based: the code to change.
 - `occurrences`, `total_ms`, `suggestion` (a hint, not a patch). With `--full` or `lantern:issue`: `evidence.sql_shape` normalized SQL (`sample_sql` is null when identical), `evidence.trace_id` use as BEFORE for `lantern:diff`. Plan findings add `evidence.rows_read`, `evidence.projected` (scan size here vs production) and `evidence.schema_note` (production indexes missing locally) when known. `lantern:schema-snapshot` / `lantern:schema-diff` compare local and production indexes; `lantern:probe {id} --in-sizes=...` re-plans a `plan_flip` query.
 - `truncated: true` means more results exist: pass `--offset=<next_offset>` or a higher `--limit`.

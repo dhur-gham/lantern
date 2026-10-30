@@ -65,6 +65,20 @@ final class InstallSqlTest extends TestCase
         $this->assertMatchesRegularExpression('/alter table "lantern_plan_samples" add column "sql_hash"/i', $out);
     }
 
+    public function test_since_0_4_2_prints_the_resolved_state_columns_and_a_runnable_backfill(): void
+    {
+        $code = Artisan::call('lantern:install', ['--sql' => true, '--since' => '0.4.2']);
+        $out = Artisan::output();
+
+        $this->assertSame(0, $code);
+        $this->assertStringContainsString('add_resolved_state_to_lantern_issues_table', $out);
+        $this->assertStringNotContainsString('add_sql_hash_to_lantern_plan_samples_table', $out);
+        $this->assertMatchesRegularExpression('/alter table "lantern_issues" add column "resolved_at"/i', $out);
+        $this->assertMatchesRegularExpression('/alter table "lantern_issues" add column "shape"/i', $out);
+        $this->assertMatchesRegularExpression('/update "lantern_issues" set "shape" = issue_key where type in \(\'missing_index\', \'index_not_chosen\', \'plan_flip\'\) and "shape" is null;/i', $out);
+        $this->assertStringNotContainsString('?', $out, 'no unbound placeholders in the printed SQL');
+    }
+
     public function test_every_statement_ends_with_a_semicolon_and_comments_name_the_migration(): void
     {
         Artisan::call('lantern:install', ['--sql' => true]);

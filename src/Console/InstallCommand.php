@@ -25,6 +25,7 @@ class InstallCommand extends Command
         '2024_01_01_000003_add_app_to_lantern_tables' => '0.4.0',
         '2024_01_01_000004_create_lantern_plan_samples_table' => '0.4.0',
         '2024_01_01_000005_add_sql_hash_to_lantern_plan_samples_table' => '0.4.1',
+        '2024_01_01_000006_add_resolved_state_to_lantern_issues_table' => '0.4.2',
     ];
 
     /** Migrations whose change a create migration already includes, so printing both would add the column twice. */

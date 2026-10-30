@@ -441,6 +441,86 @@ final class IndexAnalysisTest extends QueryTestCase
         }
     }
 
+    public function test_raw_bindings_held_on_the_span_are_replayed_when_stored_bindings_are_redacted(): void
+    {
+        $analyzer = $this->analyzer(41);
+        $plan = $this->plan([['table' => 'orders', 'rows' => 820000, 'key' => null, 'type' => 'ALL']]);
+        $trace = $this->traceFor('select * from orders where customer_id = ?', ['[redacted]']);
+        array_values($trace->spans())[1]->keepRawBindings([4711]);
+        $config = array_replace_recursive($this->config(), ['explain_analyze' => true]);
+
+        $issues = (new MissingIndexDetector($config, $plan, $this->catalog(), $analyzer))->detect($trace);
+
+        $this->assertSame(41, $issues[0]->meta['rows_returned']);
+        $this->assertSame([4711], $analyzer->calls[0]['bindings']);
+        $this->assertArrayNotHasKey('bindings', $issues[0]->meta);
+        $this->assertStringNotContainsString('4711', json_encode($issues[0]->toArray()));
+    }
+
+    public function test_raw_bindings_are_replayed_with_the_sql_they_belong_to(): void
+    {
+        $analyzer = $this->analyzer(5);
+        $plan = $this->plan([['table' => 'orders', 'rows' => 820000, 'key' => null, 'type' => 'ALL']]);
+        $recorder = $this->recorder();
+        $recorder->reset();
+        $trace = $recorder->begin();
+        foreach (['select * from orders where customer_id in (?)' => [1], 'select * from orders where customer_id in (?, ?, ?)' => [1, 2, 3]] as $sql => $values) {
+            $now = hrtime(true);
+            $span = $recorder->recordClosed(SpanType::Query, 'q', $now, $now + 60_000_000, [
+                'sql' => $sql, 'bindings' => ['[redacted]'], 'fingerprint' => 'same-shape', 'connection' => 'testing', 'time_ms' => 60.0, 'failed' => false,
+            ]);
+            if (count($values) === 3) {
+                $span->keepRawBindings($values);
+            }
+        }
+        $config = array_replace_recursive($this->config(), ['explain_analyze' => true]);
+
+        (new MissingIndexDetector($config, $plan, $this->catalog(), $analyzer))->detect($trace);
+
+        $this->assertSame('select * from orders where customer_id in (?, ?, ?)', $analyzer->calls[0]['sql']);
+        $this->assertSame([1, 2, 3], $analyzer->calls[0]['bindings']);
+    }
+
+    public function test_raw_bindings_that_do_not_fit_the_sql_are_not_replayed(): void
+    {
+        $analyzer = $this->analyzer(41);
+        $plan = $this->plan([['table' => 'orders', 'rows' => 820000, 'key' => null, 'type' => 'ALL']]);
+        $trace = $this->traceFor('select * from orders where customer_id = ?', ['[redacted]']);
+        array_values($trace->spans())[1]->keepRawBindings([1, 2]);
+        $config = array_replace_recursive($this->config(), ['explain_analyze' => true]);
+
+        $issues = (new MissingIndexDetector($config, $plan, $this->catalog(), $analyzer))->detect($trace);
+
+        $this->assertNull($issues[0]->meta['rows_returned']);
+        $this->assertSame([], $analyzer->calls);
+    }
+
+    public function test_the_execution_limit_is_merged_into_an_existing_hint_block(): void
+    {
+        $this->assertSame(
+            ['select /*+ MAX_EXECUTION_TIME(1500) */ * from orders', 1500],
+            ExplainRunner::withExecutionLimit('select * from orders', 1500),
+        );
+        $this->assertSame(
+            ['select /*+ MAX_EXECUTION_TIME(1500) JOIN_ORDER(orders, items) */ * from orders', 1500],
+            ExplainRunner::withExecutionLimit('select /*+ JOIN_ORDER(orders, items) */ * from orders', 1500),
+        );
+        $this->assertSame(
+            ['  SELECT /*+ MAX_EXECUTION_TIME(1500) NO_BNL(a)  INDEX(a idx) */ a.* from a', 1500],
+            ExplainRunner::withExecutionLimit("  SELECT\n/*+ NO_BNL(a)  INDEX(a idx) */ a.* from a", 1500),
+        );
+        // the tighter of the two limits wins, and no second hint comment is added
+        $this->assertSame(
+            ['select /*+ MAX_EXECUTION_TIME(300) JOIN_ORDER(a, b) */ * from a', 300],
+            ExplainRunner::withExecutionLimit('select /*+ MAX_EXECUTION_TIME(300) JOIN_ORDER(a, b) */ * from a', 1500),
+        );
+        $this->assertSame(
+            ['select /*+ MAX_EXECUTION_TIME(1500) */ * from a', 1500],
+            ExplainRunner::withExecutionLimit('select /*+ MAX_EXECUTION_TIME(9000) */ * from a', 1500),
+        );
+        $this->assertNull(ExplainRunner::withExecutionLimit('(select 1) union (select 2)', 1500));
+    }
+
     public function test_a_failing_measurement_never_breaks_the_finding(): void
     {
         $issues = $this->detectAnalyzed($this->analyzer(new \RuntimeException('server gone')));

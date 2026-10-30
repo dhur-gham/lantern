@@ -48,7 +48,8 @@ final class ProbeCommandTest extends AgentTestCase
         $this->assertSame(self::KEY, $out['issue_id']);
         $this->assertSame('pr_orders', $out['table']);
         $this->assertSame('merchant_id', $out['column']);
-        $this->assertSame('table', $out['ids_source']);
+        $this->assertSame('frequent_values', $out['ids_source']);
+        $this->assertArrayNotHasKey('ids_note', $out);
         $this->assertSame('stable', $out['verdict']);
         $this->assertSame([], $out['plan_changes']);
         $this->assertSame([1, 7, 20, 30], array_column($out['sizes'], 'in_size'));
@@ -84,7 +85,77 @@ final class ProbeCommandTest extends AgentTestCase
 
         $this->assertSame(0, $code);
         $this->assertSame('synthetic', $out['ids_source']);
+        $this->assertStringContainsString('1..N', $out['ids_note']);
         $this->assertSame([3, 50], array_column($out['sizes'], 'in_size'));
+    }
+
+    public function test_lists_hold_the_most_frequent_values_and_smaller_lists_are_prefixes(): void
+    {
+        $this->skew();
+        $seen = [];
+        $this->app->instance(InListProbe::class, new InListProbe(null, function (?string $connection, string $sql, array $bindings) use (&$seen): array {
+            $seen[] = array_slice($bindings, 0, -1);
+
+            return ['full_scan' => false, 'table' => 'pr_orders', 'rows' => 10, 'key' => 'merchant_id', 'possible_keys' => null, 'raw' => []];
+        }));
+
+        [$code, $out] = $this->jsonOut('lantern:probe', ['key' => self::KEY, '--in-sizes' => '1,3']);
+
+        $this->assertSame(0, $code);
+        $this->assertSame('frequent_values', $out['ids_source']);
+        $this->assertSame([[1029], [1029, 1005, 1000]], $seen, 'most frequent first, ties by value');
+        $this->assertStringNotContainsString('1029', json_encode($out), 'the values themselves are not emitted');
+    }
+
+    public function test_a_value_with_few_rows_does_not_report_a_false_flip(): void
+    {
+        $this->skew();
+        // the optimizer scans when the list matches only a handful of rows, as it does for an id with no data
+        $this->app->instance(InListProbe::class, new InListProbe(null, function (?string $connection, string $sql, array $bindings): array {
+            $matched = DB::table('pr_orders')->whereIn('merchant_id', array_slice($bindings, 0, -1))->count();
+            $scan = $matched < 5;
+
+            return ['full_scan' => $scan, 'table' => 'pr_orders', 'rows' => $matched, 'key' => $scan ? null : 'merchant_id', 'possible_keys' => 'merchant_id', 'raw' => []];
+        }));
+
+        [$code, $out] = $this->jsonOut('lantern:probe', ['key' => self::KEY, '--in-sizes' => '1,7,20']);
+
+        $this->assertSame(0, $code);
+        $this->assertSame('stable', $out['verdict']);
+        $this->assertSame([], $out['plan_changes']);
+        $this->assertFalse($out['sizes'][0]['plan']['full_scan'], 'size 1 uses a value that has rows');
+    }
+
+    public function test_null_values_are_never_probed(): void
+    {
+        Schema::create('pr_owned', function (Blueprint $t) {
+            $t->id();
+            $t->unsignedInteger('owner')->nullable();
+        });
+        foreach (range(1, 30) as $i) {
+            DB::table('pr_owned')->insert(['owner' => null]);
+        }
+        DB::table('pr_owned')->insert([['owner' => 5], ['owner' => 5], ['owner' => 9]]);
+
+        $seen = [];
+        $probe = new InListProbe(null, function (?string $connection, string $sql, array $bindings) use (&$seen): array {
+            $seen[] = $bindings;
+
+            return ['full_scan' => false, 'table' => 'pr_owned', 'rows' => 3, 'key' => 'idx', 'possible_keys' => null, 'raw' => []];
+        });
+
+        $out = $probe->run('select * from "pr_owned" where "owner" in (?, ?)', [1, 2], null, [1, 4]);
+
+        $this->assertSame('frequent_values', $out['ids_source']);
+        $this->assertSame([1, 2], array_column($out['sizes'], 'in_size'), 'only the two non-null values exist');
+        $this->assertSame([[5], [5, 9]], $seen);
+    }
+
+    /** 1029 holds 22 rows, 1005 holds 10, every other value 2. */
+    private function skew(): void
+    {
+        DB::table('pr_orders')->insert(array_fill(0, 20, ['merchant_id' => 1029]));
+        DB::table('pr_orders')->insert(array_fill(0, 8, ['merchant_id' => 1005]));
     }
 
     public function test_usage_and_lookup_errors_exit_2(): void

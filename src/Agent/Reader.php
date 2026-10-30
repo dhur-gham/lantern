@@ -54,7 +54,7 @@ final class Reader
         $row = $this->queries->issue($key);
         if ($row === null && strlen($key) >= 6) {
             $matches = array_values(array_filter(
-                $this->queries->issues([], self::MAX_ROWS),
+                $this->queries->issues(['resolved' => 'include'], self::MAX_ROWS),
                 fn (array $r): bool => str_starts_with((string) $r['issue_key'], $key),
             ));
             if (count($matches) > 1) {
@@ -223,6 +223,15 @@ final class Reader
     public function issueRows(int $limit = self::MAX_ROWS): array
     {
         return $this->queries->issues([], $limit);
+    }
+
+    /**
+     * @param list<string> $ids issue ids
+     * @return list<string> those that are resolved
+     */
+    public function resolvedIds(array $ids): array
+    {
+        return $this->queries->resolvedKeys($ids);
     }
 
     /** @return array<string, mixed> */

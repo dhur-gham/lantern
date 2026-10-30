@@ -119,6 +119,31 @@ final class ExplainRunner implements AnalyzeSource, PlanSource
     }
 
     /**
+     * Put a MAX_EXECUTION_TIME hint on a SELECT. A query that already starts with an optimizer hint block keeps its
+     * hints and gets the limit merged into that block (MySQL only reads the first one); an existing
+     * MAX_EXECUTION_TIME is kept when it is the tighter one.
+     *
+     * @return array{0: string, 1: int}|null the SQL and the limit that applies, or null when it cannot be placed
+     */
+    public static function withExecutionLimit(string $sql, int $timeoutMs): ?array
+    {
+        if (preg_match('/^(\s*select)\b(\s*)\/\*\+(.*?)\*\//is', $sql, $m) === 1) {
+            $body = trim($m[3]);
+            if (preg_match('/MAX_EXECUTION_TIME\s*\(\s*(\d+)\s*\)/i', $body, $t) === 1) {
+                $timeoutMs = min($timeoutMs, max(1, (int) $t[1]));
+                $body = trim((string) preg_replace('/MAX_EXECUTION_TIME\s*\(\s*\d+\s*\)/i', '', $body, 1));
+            }
+            $merged = 'MAX_EXECUTION_TIME('.$timeoutMs.')'.($body === '' ? '' : ' '.$body);
+
+            return [$m[1].' /*+ '.$merged.' */'.substr($sql, strlen($m[0])), $timeoutMs];
+        }
+
+        $hinted = preg_replace('/^(\s*select)\b/i', '$1 /*+ MAX_EXECUTION_TIME('.$timeoutMs.') */', $sql, 1, $count);
+
+        return $count === 1 && is_string($hinted) ? [$hinted, $timeoutMs] : null;
+    }
+
+    /**
      * EXPLAIN ANALYZE with a MAX_EXECUTION_TIME hint. MySQL ends an interrupted ANALYZE quietly instead of raising
      * an error, and the numbers of an interrupted run are partial, so a run that used up the limit is discarded.
      *
@@ -126,10 +151,11 @@ final class ExplainRunner implements AnalyzeSource, PlanSource
      */
     private function mysqlReturned(\PDO $pdo, string $sql, array $params, int $timeoutMs): ?int
     {
-        $hinted = preg_replace('/^(\s*select)\b(?!\s*\/\*\+)/i', '$1 /*+ MAX_EXECUTION_TIME('.$timeoutMs.') */', $sql, 1, $count);
-        if ($count !== 1 || ! is_string($hinted)) {
-            return null; // parenthesised, or it already carries its own hints
+        $limited = self::withExecutionLimit($sql, $timeoutMs);
+        if ($limited === null) {
+            return null; // parenthesised, so there is no place to put the hint
         }
+        [$hinted, $timeoutMs] = $limited;
 
         $statement = $pdo->prepare('EXPLAIN ANALYZE '.$hinted);
         $statement->execute($params);

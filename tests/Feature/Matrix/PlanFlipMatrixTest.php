@@ -211,7 +211,7 @@ final class PlanFlipMatrixTest extends MatrixTestCase
         $this->assertNotNull($out);
         $this->assertSame('mx_items', $out['table']);
         $this->assertSame('merchant_id', $out['column']);
-        $this->assertSame('table', $out['ids_source']);
+        $this->assertSame('frequent_values', $out['ids_source']);
         $this->assertSame([1, 5, 20, 50], array_column($out['sizes'], 'in_size'), 'the 50 real merchant ids cap the largest list');
         foreach ($out['sizes'] as $row) {
             $this->assertNotNull($row['plan'], 'EXPLAIN works at size '.$row['in_size']);
@@ -221,6 +221,33 @@ final class PlanFlipMatrixTest extends MatrixTestCase
         $this->assertIsArray($out['plan_changes']);
 
         $this->assertNull($probe->run('select * from mx_items where id = ?', [1], self::driver(), [1, 5]));
+    }
+
+    public function test_probe_lists_start_with_the_most_frequent_values_on_a_real_engine(): void
+    {
+        $this->seedShop();
+        DB::table('mx_items')->insert(array_fill(0, 300, ['order_id' => 1, 'merchant_id' => 33, 'is_approved' => false]));
+        DB::table('mx_items')->insert(array_fill(0, 120, ['order_id' => 2, 'merchant_id' => 41, 'is_approved' => false]));
+        $this->analyze('mx_items');
+
+        $lists = [];
+        $runner = new ExplainRunner;
+        $probe = new InListProbe($runner, function (?string $connection, string $sql, array $bindings) use (&$lists, $runner): ?array {
+            $lists[] = array_slice($bindings, 0, -1);
+
+            return $runner->explain($connection, $sql, $bindings);
+        });
+
+        $out = $probe->run('select * from mx_items where merchant_id in (?, ?, ?) and order_id > ?', [1, 2, 3, 10], self::driver(), [1, 2, 5]);
+
+        $this->assertNotNull($out);
+        $this->assertSame('frequent_values', $out['ids_source']);
+        $this->assertSame([33], $lists[0], 'size 1 is the busiest merchant, not the lowest id');
+        $this->assertSame([33, 41], array_slice($lists[1], 0, 2));
+        $this->assertSame(array_slice($lists[2], 0, 2), $lists[1], 'smaller lists are prefixes of larger ones');
+        foreach ($out['sizes'] as $row) {
+            $this->assertNotNull($row['plan'], 'EXPLAIN works at size '.$row['in_size']);
+        }
     }
 
     public function test_probe_falls_back_to_synthetic_ids_when_the_table_is_unknown(): void

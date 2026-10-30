@@ -8,6 +8,7 @@ use Illuminate\Database\Connection;
 use Illuminate\Database\ConnectionResolverInterface;
 use Illuminate\Database\QueryException;
 use Illuminate\Database\Query\Expression;
+use Lantern\Agent\Findings;
 use Lantern\Detection\Issue;
 use Lantern\Instrumentation\Query\QuerySuspend;
 use Lantern\Trace\Trace;
@@ -17,7 +18,10 @@ final class DatabaseTraceStore implements TraceStore
     private const JSON_FLAGS = PayloadCodec::JSON_FLAGS;
 
     /** Set once a write fails because the `app` column is missing (package upgraded, migration not yet run). */
-    private bool $legacySchema = false;
+    private bool $legacyApp = false;
+
+    /** Same for the `shape` and `resolved_at` columns of lantern_issues. */
+    private bool $legacyResolve = false;
 
     public function __construct(
         private readonly ConnectionResolverInterface $db,
@@ -50,14 +54,21 @@ final class DatabaseTraceStore implements TraceStore
                 'created_at' => $now,
             ];
 
-            try {
-                $this->write($conn, $row, $issues, $startedAt, ! $this->legacySchema);
-            } catch (QueryException $e) {
-                if ($this->legacySchema || ! preg_match('/no column named app\b|unknown column \'app\'|column "app" of relation/i', $e->getMessage())) {
-                    throw $e;
+            // A column added by a migration that has not run yet is dropped from the write, once per column group.
+            while (true) {
+                try {
+                    $this->write($conn, $row, $issues, $startedAt, $trace, $now);
+
+                    return;
+                } catch (QueryException $e) {
+                    if (! $this->legacyApp && self::missingColumn($e->getMessage(), ['app'])) {
+                        $this->legacyApp = true;
+                    } elseif (! $this->legacyResolve && self::missingColumn($e->getMessage(), ['shape', 'resolved_at'])) {
+                        $this->legacyResolve = true;
+                    } else {
+                        throw $e;
+                    }
                 }
-                $this->legacySchema = true;
-                $this->write($conn, $row, $issues, $startedAt, false);
             }
         });
     }
@@ -66,24 +77,72 @@ final class DatabaseTraceStore implements TraceStore
      * @param array<string, mixed> $row
      * @param list<Issue> $issues
      */
-    private function write(Connection $conn, array $row, array $issues, string $startedAt, bool $withApp): void
+    private function write(Connection $conn, array $row, array $issues, string $startedAt, Trace $trace, string $now): void
     {
+        $withApp = ! $this->legacyApp;
+        $withResolve = ! $this->legacyResolve;
         $app = $withApp ? $this->str($this->app, 100) : null;
         if ($withApp) {
             $row['app'] = $app;
         }
 
-        $conn->transaction(function () use ($conn, $row, $issues, $startedAt, $withApp, $app): void {
+        $conn->transaction(function () use ($conn, $row, $issues, $startedAt, $trace, $now, $withApp, $withResolve, $app): void {
             $conn->table('lantern_traces')->insert($row);
 
-            $rows = $this->issueRows($issues, $startedAt, (string) $row['id']);
+            $rows = $this->issueRows($issues, $startedAt, (string) $row['id'], $withResolve);
             if ($rows !== []) {
                 if ($withApp) {
                     $rows = array_map(fn (array $r): array => $r + ['app' => $app], $rows);
                 }
-                $conn->table('lantern_issues')->upsert($rows, ['issue_key'], $this->issueUpdate($conn, $withApp));
+                $conn->table('lantern_issues')->upsert($rows, ['issue_key'], $this->issueUpdate($conn, $withApp, $withResolve));
+            }
+
+            if ($withResolve) {
+                $this->resolveCleared($conn, $trace, $issues, $now);
             }
         });
+    }
+
+    /**
+     * Resolves open issues whose query shape ran in this trace without producing the finding. Runs in a savepoint so
+     * a failure here never costs the trace; only a missing column escapes, to switch the write to the old schema.
+     *
+     * @param list<Issue> $issues
+     */
+    private function resolveCleared(Connection $conn, Trace $trace, array $issues, string $now): void
+    {
+        try {
+            $conn->transaction(function () use ($conn, $trace, $issues, $now): void {
+                $config = (array) config('lantern', []);
+                $max = (int) ($config['thresholds']['max_issues_per_trace'] ?? 50);
+                if ($max > 0 && count($issues) >= $max) {
+                    return; // findings beyond the cap were dropped, so absence proves nothing
+                }
+
+                $fired = array_map(fn (Issue $i): string => Findings::shape($i->toArray()), $issues);
+                $candidates = array_values(array_diff(ClearedShapes::candidates($trace, $config), $fired));
+                $keys = array_map(fn (Issue $i): string => $i->key, $issues);
+                foreach (array_chunk($candidates, 200) as $chunk) {
+                    $query = $conn->table('lantern_issues')->whereNull('resolved_at')->whereIn('shape', $chunk);
+                    if ($keys !== []) {
+                        $query->whereNotIn('issue_key', $keys);
+                    }
+                    $query->update(['resolved_at' => $now]);
+                }
+            });
+        } catch (QueryException $e) {
+            if (self::missingColumn($e->getMessage(), ['shape', 'resolved_at'])) {
+                throw $e;
+            }
+        }
+    }
+
+    /** @param list<string> $columns */
+    private static function missingColumn(string $message, array $columns): bool
+    {
+        $names = implode('|', array_map(fn (string $c): string => preg_quote($c, '/'), $columns));
+
+        return preg_match('/(?:no column named |no such column: |unknown column \'|column ")(?:\w+\.)?(?:'.$names.')\b/i', $message) === 1;
     }
 
     public function find(string $id): ?array
@@ -118,7 +177,7 @@ final class DatabaseTraceStore implements TraceStore
      * @param list<Issue> $issues
      * @return list<array<string, mixed>>
      */
-    private function issueRows(array $issues, string $now, string $traceId): array
+    private function issueRows(array $issues, string $now, string $traceId, bool $withResolve): array
     {
         $rows = [];
         foreach ($issues as $issue) {
@@ -146,14 +205,14 @@ final class DatabaseTraceStore implements TraceStore
                 'first_seen' => $now,
                 'last_seen' => $now,
                 'last_trace_id' => $traceId,
-            ];
+            ] + ($withResolve ? ['shape' => $this->str(Findings::shape($issue->toArray()), 64), 'resolved_at' => null] : []);
         }
 
         return array_values($rows);
     }
 
     /** @return array<string, Expression> */
-    private function issueUpdate(Connection $conn, bool $withApp = false): array
+    private function issueUpdate(Connection $conn, bool $withApp = false, bool $withResolve = false): array
     {
         $g = $conn->getQueryGrammar();
         $table = $g->wrapTable('lantern_issues');
@@ -183,6 +242,11 @@ final class DatabaseTraceStore implements TraceStore
         ];
         if ($withApp) {
             $update['app'] = new Expression('coalesce('.$new('app').', '.$cur('app').')');
+        }
+        if ($withResolve) {
+            // a finding that fires again reopens the issue
+            $update['shape'] = new Expression($new('shape'));
+            $update['resolved_at'] = new Expression('NULL');
         }
 
         return $update;

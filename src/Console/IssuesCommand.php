@@ -22,6 +22,8 @@ final class IssuesCommand extends AgentCommand
         {--status= : Only issues whose latest trace has this status (404, or 5xx)}
         {--app= : Only issues of this app (default: the current app)}
         {--all-apps : Include issues of every app}
+        {--include-resolved : Also list issues that later runs showed are gone (hidden by default)}
+        {--resolved : Only list resolved issues}
         {--limit=10 : Max issues returned}
         {--offset=0 : Skip this many issues}
         {--fields= : Comma-separated fields to return}
@@ -52,15 +54,21 @@ final class IssuesCommand extends AgentCommand
         $limit = $this->intOption('limit', 10, 1);
         $offset = $this->intOption('offset', 0);
         $fields = $this->fields() ?? ($this->option('full') ? Findings::ALL_FIELDS : Findings::DEFAULT_FIELDS);
+        if ($this->option('resolved') && $this->option('include-resolved')) {
+            throw AgentException::usage('Use either --resolved or --include-resolved, not both.');
+        }
         $filters = array_filter([
             'type' => $type,
             'severity' => $severity,
             'sort' => $sort,
+            'resolved' => $this->option('resolved') ? 'only' : ($this->option('include-resolved') ? 'include' : null),
         ], fn ($v) => $v !== null && $v !== '');
         $scope = $this->scope();
         $narrowed = array_diff_key($scope, ['app' => 1]) !== [] || $this->option('since');
+        $listsAll = array_diff_key($filters, ['sort' => 1, 'resolved' => 1]) === [];
 
-        [$findings, $total, $exact] = $reader->issuesPage($filters + $scope, $limit, $offset, Reader::since($this->option('since')));
+        $since = Reader::since($this->option('since'));
+        [$findings, $total, $exact] = $reader->issuesPage($filters + $scope, $limit, $offset, $since);
 
         if (in_array('evidence', $fields, true)) {
             foreach ($findings as $i => $f) {
@@ -68,8 +76,13 @@ final class IssuesCommand extends AgentCommand
             }
         }
 
+        $hidden = 0;
+        if ($total === 0 && ! isset($filters['resolved'])) {
+            [, $hidden] = $reader->issuesPage(['resolved' => 'only'] + $filters + $scope, 1, 0, $since);
+        }
+
         if ($findings === [] && $total === 0 && $this->format() === 'table') {
-            $this->output->writeln('No issues recorded yet.');
+            $this->output->writeln($hidden > 0 ? "No open issues; $hidden resolved (pass --include-resolved to list them)." : 'No issues recorded yet.');
 
             return self::SUCCESS;
         }
@@ -91,9 +104,11 @@ final class IssuesCommand extends AgentCommand
             $payload['next'] = 'php artisan lantern:issue '.$findings[0]['id'].' --format=json';
         } elseif ($total === 0 && $this->format() !== 'table') {
             $payload['hint'] = match (true) {
-                ($filters === [] || array_keys($filters) === ['sort']) && ! $narrowed && isset($scope['app'])
+                $hidden > 0
+                    => "No open issues match; $hidden resolved issue".($hidden === 1 ? ' is' : 's are').' hidden. Pass --include-resolved to list them.',
+                $listsAll && ! $narrowed && isset($scope['app'])
                     => 'No issues stored for app "'.$scope['app'].'". Pass --all-apps to include other apps, or run the app with LANTERN_ENABLED=true and LANTERN_STORAGE_DRIVER=database, hit the route, then retry.',
-                ($filters === [] || array_keys($filters) === ['sort']) && ! $narrowed
+                $listsAll && ! $narrowed
                     => 'No issues stored. Run the app with LANTERN_ENABLED=true and LANTERN_STORAGE_DRIVER=database, hit the route, then retry.',
                 default => 'No issues match these filters; drop --type, --severity, --since, --path, --route or --status.',
             };

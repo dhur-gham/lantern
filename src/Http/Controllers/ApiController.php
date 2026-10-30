@@ -33,7 +33,7 @@ final class ApiController
     public function issues(Request $request): JsonResponse
     {
         return response()->json(['data' => $this->queries->issues(
-            $request->only(['type', 'severity', 'sort']),
+            $request->only(['type', 'severity', 'sort', 'resolved']),
             $request->integer('limit', 50),
         )]);
     }

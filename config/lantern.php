@@ -55,7 +55,9 @@ return [
 
     // Also measure how many rows a flagged query returns (so findings show "read 780k to return 41"). This runs the
     // query a second time after the request, in a read-only, time-limited statement, for at most explain_analyze_max
-    // queries per trace; queries with locks or other side effects are never replayed. Needs 'explain'.
+    // queries per trace; queries with locks or other side effects are never replayed. Needs 'explain'. The replay uses
+    // the real bindings, held in memory only until the trace is analysed (never stored), so it works with
+    // capture_bindings off.
     'explain_analyze' => env('LANTERN_EXPLAIN_ANALYZE', false),
     'explain_analyze_max' => (int) env('LANTERN_EXPLAIN_ANALYZE_MAX', 3),
     'explain_analyze_timeout_ms' => (int) env('LANTERN_EXPLAIN_ANALYZE_TIMEOUT_MS', 2000),

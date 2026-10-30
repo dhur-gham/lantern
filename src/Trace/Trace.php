@@ -36,6 +36,14 @@ final class Trace
         return $this->spans;
     }
 
+    /** Drop the in-memory raw bindings of every span (see Span::keepRawBindings). */
+    public function releaseRawBindings(): void
+    {
+        foreach ($this->spans as $span) {
+            $span->releaseRawBindings();
+        }
+    }
+
     public function root(): ?Span
     {
         return $this->rootId === null ? null : ($this->spans[$this->rootId] ?? null);

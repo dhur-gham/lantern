@@ -18,7 +18,8 @@ final class IssuesAgentTest extends AgentTestCase
         $this->assertSame('php artisan lantern:issue '.$data['issues'][0]['id'].' --format=json', $data['next']);
         $this->assertSame(1, $data['schema_version']);
         $this->assertSame('lantern.issues', $data['schema']);
-        $this->assertSame(['id', 'type', 'severity', 'title', 'call_site', 'occurrences', 'total_ms', 'suggestion'], array_keys($data['issues'][0]));
+        $this->assertSame(['id', 'type', 'severity', 'status', 'title', 'call_site', 'occurrences', 'total_ms', 'suggestion'], array_keys($data['issues'][0]));
+        $this->assertSame('open', $data['issues'][0]['status']);
         $this->assertSame(['file' => 'app/Foo.php', 'line' => 12, 'function' => 'Foo@bar'], $data['issues'][0]['call_site']);
         $this->assertSame('k1', $data['issues'][0]['id']);
     }
@@ -31,7 +32,7 @@ final class IssuesAgentTest extends AgentTestCase
         [, $data] = $this->jsonOut('lantern:issues', ['--full' => true]);
 
         $this->assertSame(
-            ['id', 'type', 'severity', 'title', 'call_site', 'occurrences', 'count_total', 'total_ms', 'max_ms', 'suggestion', 'first_seen', 'last_seen', 'related_trace_ids', 'evidence'],
+            ['id', 'type', 'severity', 'status', 'title', 'call_site', 'occurrences', 'count_total', 'total_ms', 'max_ms', 'suggestion', 'first_seen', 'last_seen', 'resolved_at', 'related_trace_ids', 'evidence'],
             array_keys($data['issues'][0]),
         );
         $this->assertSame(['t1'], $data['issues'][0]['related_trace_ids']);

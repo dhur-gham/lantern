@@ -199,7 +199,8 @@ final class CheckCommand extends AgentCommand
                 }
             }
 
-            return array_values($out);
+            // a finding in an older trace that a later clean run resolved must not fail the gate
+            return array_values(array_diff_key($out, array_flip($reader->resolvedIds(array_map('strval', array_keys($out))))));
         }
 
         [$findings] = $reader->issuesPage(array_intersect_key($scope, ['app' => 1]), Reader::MAX_ROWS, 0, $since);

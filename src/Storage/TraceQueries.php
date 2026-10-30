@@ -15,6 +15,8 @@ final class TraceQueries
 
     private const ISSUE_SORTS = ['total_ms', 'occurrences', 'last_seen'];
 
+    private bool $resolvedColumn = false;
+
     public function __construct(
         private readonly ConnectionResolverInterface $db,
         private readonly ?string $connection = null,
@@ -111,15 +113,26 @@ final class TraceQueries
     }
 
     /**
-     * `path_is`, `route_is` and `status` narrow to issues whose latest trace matches; `app` as for traces.
+     * `path_is`, `route_is` and `status` narrow to issues whose latest trace matches; `app` as for traces. Resolved
+     * issues are hidden unless `resolved` is `include` (both) or `only`.
      *
-     * @param array{type?: mixed, severity?: mixed, sort?: mixed, path_is?: mixed, route_is?: mixed, status?: mixed, app?: mixed} $filters
+     * @param array{type?: mixed, severity?: mixed, sort?: mixed, path_is?: mixed, route_is?: mixed, status?: mixed, app?: mixed, resolved?: mixed} $filters
      * @return list<array<string, mixed>>
      */
     public function issues(array $filters = [], int $limit = 50): array
     {
         return QuerySuspend::run(function () use ($filters, $limit): array {
             $q = $this->conn()->table('lantern_issues');
+
+            if ($this->hasResolvedColumn()) {
+                match ((string) ($filters['resolved'] ?? '')) {
+                    'include' => null,
+                    'only' => $q->whereNotNull('resolved_at'),
+                    default => $q->whereNull('resolved_at'),
+                };
+            } elseif (($filters['resolved'] ?? '') === 'only') {
+                return [];
+            }
 
             if (($filters['type'] ?? '') !== '') {
                 $q->where('type', (string) $filters['type']);
@@ -153,6 +166,37 @@ final class TraceQueries
     }
 
     /**
+     * Which of these issue keys are resolved.
+     *
+     * @param list<string> $keys
+     * @return list<string>
+     */
+    public function resolvedKeys(array $keys): array
+    {
+        if ($keys === []) {
+            return [];
+        }
+
+        return QuerySuspend::run(function () use ($keys): array {
+            if (! $this->hasResolvedColumn()) {
+                return [];
+            }
+            $found = [];
+            foreach (array_chunk(array_values(array_unique($keys)), 200) as $chunk) {
+                array_push($found, ...$this->conn()->table('lantern_issues')->whereIn('issue_key', $chunk)->whereNotNull('resolved_at')->pluck('issue_key')->map(fn ($k): string => (string) $k)->all());
+            }
+
+            return $found;
+        });
+    }
+
+    /** False until the resolved-state migration has run; only a positive answer is remembered. */
+    private function hasResolvedColumn(): bool
+    {
+        return $this->resolvedColumn = $this->resolvedColumn || $this->conn()->getSchemaBuilder()->hasColumn('lantern_issues', 'resolved_at');
+    }
+
+    /**
      * @param array<string, mixed> $row
      * @return array<string, mixed>
      */
@@ -162,7 +206,7 @@ final class TraceQueries
             $row['call_site'] = json_decode($row['call_site'], true);
         }
 
-        return $this->withIsoDates($row, ['first_seen', 'last_seen']);
+        return $this->withIsoDates($row, ['first_seen', 'last_seen', 'resolved_at']);
     }
 
     /**
