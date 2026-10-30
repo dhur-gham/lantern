@@ -673,6 +673,26 @@ final class IndexAnalysisTest extends QueryTestCase
         $this->assertSame(['budget', 'budget'], array_column(array_column($byQuery['skipped'], 'meta'), 'rows_returned_why'));
     }
 
+    public function test_a_replay_that_ran_out_of_time_says_timeout(): void
+    {
+        $analyzer = new class implements AnalyzeSource
+        {
+            public function rowsReturned(?string $connectionName, string $sql, array $bindings = [], int $timeoutMs = 2000): ?int
+            {
+                return null;
+            }
+
+            public function failure(): string
+            {
+                return 'timeout';
+            }
+        };
+
+        $issues = $this->detectAnalyzed($analyzer);
+
+        $this->assertSame('timeout', $issues[0]->meta['rows_returned_why']);
+    }
+
     public function test_an_empty_rows_returned_says_why(): void
     {
         $failed = $this->detectAnalyzed($this->analyzer(null));
