@@ -441,6 +441,7 @@ Disabled unless enabled, and a disabled Lantern registers no listeners. Recordin
 - [CLI reference](docs/CLI.md)
 - [Agents guide](docs/AGENTS_GUIDE.md)
 - [Compatibility](docs/COMPATIBILITY.md)
+- [Upgrading](docs/UPGRADING.md)
 
 ## License
 

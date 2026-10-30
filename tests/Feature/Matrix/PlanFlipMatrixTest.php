@@ -18,7 +18,7 @@ use Lantern\Trace\Trace;
 
 final class PlanFlipMatrixTest extends MatrixTestCase
 {
-    private const MIGRATIONS = ['2024_01_01_000001_create_lantern_traces_table', '2024_01_01_000002_create_lantern_issues_table', '2024_01_01_000004_create_lantern_plan_samples_table'];
+    private const MIGRATIONS = ['2024_01_01_000001_create_lantern_traces_table', '2024_01_01_000002_create_lantern_issues_table', '2024_01_01_000004_create_lantern_plan_samples_table', '2024_01_01_000005_add_sql_hash_to_lantern_plan_samples_table'];
 
     private const FP = 'fp-mx-items-by-merchant';
 
@@ -43,18 +43,18 @@ final class PlanFlipMatrixTest extends MatrixTestCase
         return ['explain' => true, 'storage' => ['driver' => 'database'], 'thresholds' => ['slow_query_ms' => 100, 'n_plus_one_min_repeats' => 5]];
     }
 
-    private function inSql(int $size): string
+    private function inSql(int $size, string $hint = ''): string
     {
-        return 'select * from mx_items where merchant_id in ('.implode(', ', array_fill(0, $size, '?')).')';
+        return 'select '.$hint.'* from mx_items where merchant_id in ('.implode(', ', array_fill(0, $size, '?')).')';
     }
 
-    private function trace(int $size, float $ms): Trace
+    private function trace(int $size, float $ms, string $hint = ''): Trace
     {
         $recorder = new Recorder;
         $trace = $recorder->begin(['kind' => 'request', 'method' => 'GET', 'path' => '/x', 'status' => 200]);
         $now = hrtime(true);
         $recorder->recordClosed(SpanType::Query, 'q', $now, $now + (int) ($ms * 1_000_000), [
-            'sql' => $this->inSql($size), 'bindings' => range(1, $size), 'fingerprint' => self::FP, 'connection' => self::driver(),
+            'sql' => $this->inSql($size, $hint), 'bindings' => range(1, $size), 'fingerprint' => self::FP, 'connection' => self::driver(),
             'time_ms' => $ms, 'failed' => false, 'in_size' => $size,
         ], ['file' => 'app/Items.php', 'line' => 12]);
 
@@ -134,6 +134,57 @@ final class PlanFlipMatrixTest extends MatrixTestCase
         $detector->detect($this->trace(41, 2800.0));
         $this->assertSame(2, $explains, 'a known size is not explained again');
         $this->assertSame(2, (int) DB::table('lantern_plan_samples')->where('in_size', 41)->value('samples'));
+    }
+
+    public function test_adding_a_hint_resets_the_stored_samples_and_the_flip_stops(): void
+    {
+        $this->seedShop();
+        $detector = new PlanFlipDetector($this->config(), null, function (?string $connection, string $sql): array {
+            $scan = substr_count($sql, '?') > 20 && ! str_contains($sql, 'JOIN_ORDER');
+
+            return ['full_scan' => $scan, 'table' => $scan ? 'mx_orders' : 'mx_items', 'rows' => $scan ? 820_000 : 120, 'key' => $scan ? null : 'mx_merchant_id_2', 'possible_keys' => null, 'raw' => []];
+        });
+
+        $detector->detect($this->trace(7, 66.0));
+        $this->assertCount(1, $detector->detect($this->trace(41, 2900.0)));
+        $this->assertSame(2, DB::table('lantern_plan_samples')->where('shape', self::FP)->whereNotNull('sql_hash')->count());
+
+        $this->assertSame([], $detector->detect($this->trace(41, 150.0, '/*+ JOIN_ORDER(mx_items, mx_orders) */ ')));
+
+        $rows = DB::table('lantern_plan_samples')->where('shape', self::FP)->get();
+        $this->assertCount(1, $rows, 'the samples of the unhinted text are gone');
+        $this->assertSame(1, (int) $rows[0]->samples);
+        $this->assertEqualsWithDelta(150.0, (float) $rows[0]->avg_ms, 0.001);
+        $this->assertSame('mx_merchant_id_2', $rows[0]->plan_key);
+        $this->assertFalse((bool) $rows[0]->full_scan);
+    }
+
+    public function test_samples_without_a_hash_are_rewritten_and_a_missing_column_degrades(): void
+    {
+        $now = now();
+        DB::table('lantern_plan_samples')->insert(['shape' => self::FP, 'in_size' => 41, 'samples' => 4, 'avg_ms' => 2900.0, 'plan_table' => 'mx_orders', 'full_scan' => true, 'explained_at' => $now, 'updated_at' => $now]);
+        $detector = new PlanFlipDetector($this->config(), null, fn (): array => ['full_scan' => false, 'table' => 'mx_items', 'rows' => 120, 'key' => 'mx_merchant_id_2', 'possible_keys' => null, 'raw' => []]);
+
+        $detector->detect($this->trace(7, 60.0));
+        $this->assertSame([7], DB::table('lantern_plan_samples')->where('shape', self::FP)->pluck('in_size')->map(fn ($s) => (int) $s)->all());
+
+        Schema::table('lantern_plan_samples', fn ($table) => $table->dropColumn('sql_hash'));
+        $fresh = new PlanFlipDetector($this->config(), null, fn (): array => ['full_scan' => false, 'table' => 'mx_items', 'rows' => 120, 'key' => 'mx_merchant_id_2', 'possible_keys' => null, 'raw' => []]);
+        $fresh->detect($this->trace(7, 40.0));
+        $this->assertSame(2, (int) DB::table('lantern_plan_samples')->where('in_size', 7)->value('samples'));
+    }
+
+    public function test_a_time_far_from_the_average_refreshes_the_stored_plan_on_a_real_engine(): void
+    {
+        $this->seedShop();
+        $detector = new PlanFlipDetector($this->config(), new ExplainRunner);
+        $detector->detect($this->trace(3, 12.0));
+
+        DB::table('lantern_plan_samples')->update(['explained_at' => now()->subMinutes(10)]);
+        $detector->detect($this->trace(3, 400.0));
+
+        $explainedAt = DB::table('lantern_plan_samples')->where('shape', self::FP)->value('explained_at');
+        $this->assertTrue(\Illuminate\Support\Carbon::parse((string) $explainedAt)->gt(now()->subMinutes(2)));
     }
 
     public function test_detector_persists_the_plan_of_a_real_explain(): void

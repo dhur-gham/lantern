@@ -128,6 +128,8 @@ abstract class MatrixTestCase extends TestCase
             $t->increments('id');
             $t->unsignedInteger('owner_id');
             $t->boolean('is_open')->default(false);
+            $t->tinyInteger('state')->default(0);
+            $t->unsignedInteger('is_vip')->default(0);
             $t->string('title', 40)->default('t');
         });
 
@@ -139,7 +141,7 @@ abstract class MatrixTestCase extends TestCase
             DB::table('mx_items')->insert(array_map(fn (int $i): array => ['order_id' => ($i * 7) % 6000 + 1, 'merchant_id' => $i % 50 + 1, 'is_approved' => (bool) ($i % 2)], $chunk));
         }
         foreach (array_chunk(range(0, 2999), 500) as $chunk) {
-            DB::table('mx_tickets')->insert(array_map(fn (int $i): array => ['owner_id' => $i % 300 + 1, 'is_open' => (bool) ($i % 2)], $chunk));
+            DB::table('mx_tickets')->insert(array_map(fn (int $i): array => ['owner_id' => $i % 300 + 1, 'is_open' => (bool) ($i % 2), 'state' => $i % 3, 'is_vip' => $i % 2], $chunk));
         }
 
         $this->analyze('mx_orders', 'mx_items', 'mx_tickets');

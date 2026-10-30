@@ -35,6 +35,18 @@ class StatusCommand extends Command
         }
         $this->line('Keep rate: '.$keep);
 
+        $active = LanternServiceProvider::effectiveDetectors(config('lantern.detectors'), config('lantern.disabled_detectors'));
+        $this->line('Detectors: '.($active === [] ? 'none' : implode(', ', array_map(fn (string $c): string => class_basename($c), $active))));
+        if ($enabled) {
+            $off = array_map(fn ($c): string => ltrim((string) $c, '\\'), (array) config('lantern.disabled_detectors', []));
+            $on = array_map(fn (string $c): string => ltrim($c, '\\'), $active);
+            foreach (LanternServiceProvider::packageDetectors() as $class) {
+                if (! in_array(ltrim($class, '\\'), $on, true) && ! in_array(ltrim($class, '\\'), $off, true)) {
+                    $this->warn(class_basename($class).' is off (not in detectors). Add \\'.ltrim($class, '\\').'::class to the detectors array in config/lantern.php, or list it in disabled_detectors to silence this.');
+                }
+            }
+        }
+
         if ($enabled && $driver === 'database' && ! (is_string($connection) && $connection !== '')) {
             $this->warn('LANTERN_DB_CONNECTION is not set: traces live in the application\'s default database and move with DB_CONNECTION/DB_DATABASE. Set LANTERN_DB_CONNECTION=lantern for a dedicated SQLite file (storage/lantern/lantern.sqlite), then run php artisan migrate.');
         }
