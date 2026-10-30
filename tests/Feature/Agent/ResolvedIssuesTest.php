@@ -128,6 +128,28 @@ final class ResolvedIssuesTest extends AgentTestCase
         $this->assertNotNull($this->resolvedAt($issue->key));
     }
 
+    public function test_a_removed_query_resolves_when_the_function_only_runs_a_closure_of_its_own(): void
+    {
+        $issue = new Issue(
+            Issue::TYPE_DUPLICATE,
+            Issue::key(Issue::TYPE_DUPLICATE, 'fp-duplicate-barcodes', 'app/Orders.php#duplicateBarcodeVariations'),
+            'Duplicate query',
+            Issue::SEV_WARNING,
+            4,
+            40.0,
+            ['file' => base_path('app/Orders.php'), 'line' => 12, 'function' => 'duplicateBarcodeVariations'],
+            [2],
+            ['fingerprint' => 'fp-duplicate-barcodes'],
+        );
+        $this->persist($this->trace([['ms' => 10.0, 'fp' => 'fp-duplicate-barcodes', 'fn' => 'duplicateBarcodeVariations']], 'orders.edit'), [$issue]);
+
+        $this->source('<?php // v2, the duplicate lookup is gone');
+        $remaining = ['fp' => 'fp-other', 'ms' => 5.0, 'sql' => 'select * from "barcodes"', 'fn' => '{closure:{closure:App\\Orders::duplicateBarcodeVariations():58}:61}'];
+        $this->persist($this->trace([$remaining], 'orders.edit'));
+
+        $this->assertNotNull($this->resolvedAt($issue->key));
+    }
+
     public function test_an_absent_query_with_unchanged_code_stays_open_as_a_data_difference(): void
     {
         $issue = $this->slowIssue();

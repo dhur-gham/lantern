@@ -9,6 +9,8 @@ Lantern records request traces and detects performance issues with `file:line`. 
 - Verify after every edit: `php artisan lantern:diff {before} last` and `php artisan lantern:check --route=<route> --no-new-issues`.
 - Do not ignore an issue or raise a threshold to pass a check. Fix the query (eager load, index, `select()`).
 
+- Reproduce outside a request: wrap code in `Lantern\Facades\Lantern::record('name', fn () => ..., ['id' => 1])` (own trace with route `record:name`; a plain call when Lantern is off). `php artisan lantern:run probes/x.php [--repeat=5] [--diff=name] [--key=value]` runs a script with Lantern on, local only, rolls back its database writes unless `--commit`, passes extra options as `$args`, and returns the traces as JSON (`rolled_back`, `traces`, `summary`, `diff`). Then `lantern:issues --route='record:*'`. Reproduce the production condition (data shape, fields set in production) or the probe hides the bug. It is not an MCP tool.
+
 Exit codes: 0 ok, 1 `lantern:check` failed, 2 usage/config/storage error (also unknown options), 3 no data. Results carry `next` (suggested next command) and `hint`; follow them.
 
 If the `lantern` MCP server is connected (`php artisan mcp:start lantern`, needs `laravel/mcp`), use its tools instead of the commands: `lantern_issues`, `lantern_issue`, `lantern_trace_summary`, `lantern_diff`, `lantern_check` return the same JSON.

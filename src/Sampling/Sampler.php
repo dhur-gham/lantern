@@ -53,6 +53,10 @@ final class Sampler
     /** @param list<array<string, mixed>>|list<object> $issues */
     public function keepTrace(Trace $trace, array $issues): bool
     {
+        if (($trace->meta['keep'] ?? false) === true) {
+            return true;
+        }
+
         if ($issues !== []) {
             return true;
         }

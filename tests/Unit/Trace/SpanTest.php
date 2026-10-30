@@ -36,7 +36,7 @@ final class SpanTest extends TestCase
 
     public function test_enum_values(): void
     {
-        $this->assertCount(14, SpanType::cases());
+        $this->assertCount(15, SpanType::cases());
         $this->assertSame('livewire', SpanType::Livewire->value);
     }
 }

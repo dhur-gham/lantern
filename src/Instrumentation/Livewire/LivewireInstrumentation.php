@@ -52,14 +52,14 @@ final class LivewireInstrumentation
                     $recorder = self::recorder($app);
                     $trace = $recorder?->isActive() ? $recorder->trace() : null;
                     if ($trace !== null && ($args[0] ?? null) instanceof \Livewire\Component && is_string($args[1] ?? null) && self::isUpdate()) {
-                        $trace->meta['route'] = 'livewire:'.$args[0]::class.' updated '.$args[1];
+                        self::addCall($trace, $args[0]::class, 'updated.'.$args[1]);
                     }
                 });
             });
 
             Livewire::listen('mount', static fn (...$args) => self::phaseWithFinish($app, 'mount', $args[0] ?? null, null));
             Livewire::listen('render', static fn (...$args) => self::phaseWithFinish($app, 'render', $args[0] ?? null, null));
-            Livewire::listen('call', static fn (...$args) => self::phaseWithFinish($app, 'call', $args[0] ?? null, is_string($args[1] ?? null) ? $args[1] : null));
+            Livewire::listen('call', static fn (...$args) => self::phaseWithFinish($app, 'call', $args[0] ?? null, is_string($args[1] ?? null) ? $args[1] : null, is_array($args[2] ?? null) ? $args[2] : []));
             Livewire::listen('hydrate', static function (...$args) use ($app): void {
                 self::instant($app, 'hydrate', $args[0] ?? null);
             });
@@ -70,7 +70,7 @@ final class LivewireInstrumentation
         }
     }
 
-    private static function phaseWithFinish(Application $app, string $phase, mixed $component, ?string $method): ?Closure
+    private static function phaseWithFinish(Application $app, string $phase, mixed $component, ?string $method, array $params = []): ?Closure
     {
         try {
             $recorder = self::recorder($app);
@@ -82,7 +82,7 @@ final class LivewireInstrumentation
             $name = $component instanceof \Livewire\Component ? class_basename($component).' '.($method !== null ? 'call '.$method : $phase) : $phase;
             $span = $recorder->start(SpanType::Livewire, $name, $meta);
             self::touch($recorder, $meta['component'] ?? null);
-            self::label($recorder, $meta['component'] ?? null, $method);
+            self::label($recorder, $meta['component'] ?? null, $method, $params);
 
             return static function (...$ret) use ($recorder, $span): void {
                 try {
@@ -135,27 +135,51 @@ final class LivewireInstrumentation
         }
     }
 
-    private static function label(Recorder $recorder, mixed $class, ?string $method): void
+    /** @param array<int|string, mixed> $params */
+    private static function label(Recorder $recorder, mixed $class, ?string $method, array $params = []): void
     {
         $trace = $recorder->trace();
         if ($trace === null || ! is_string($class) || ! self::isUpdate()) {
             return;
         }
 
-        $current = (string) ($trace->meta['route'] ?? '');
-        $named = str_starts_with($current, 'livewire:');
-        if ($method === null ? $named : str_contains($current, '@')) {
+        if (($trace->meta['kind'] ?? null) === 'record') {
             return;
         }
 
-        if ($method === '$commit') {
+        if ($method === null) {
+            if (! str_starts_with((string) ($trace->meta['route'] ?? ''), 'livewire:')) {
+                $trace->meta['route'] = 'livewire:'.$class;
+            }
+
             return;
         }
-        if ($method !== null && str_starts_with($method, '$set')) {
-            $method = null;
+
+        if ($method === '$commit' || str_starts_with($method, '$set')) {
+            return;
         }
 
-        $trace->meta['route'] = 'livewire:'.$class.($method !== null ? '@'.$method : '');
+        $first = $params[0] ?? null;
+        if ($method === 'callSchemaComponentMethod' && is_string($first) && $first !== '') {
+            $method .= ':'.$first;
+        }
+
+        self::addCall($trace, $class, $method);
+    }
+
+    private static function addCall(\Lantern\Trace\Trace $trace, string $class, string $method): void
+    {
+        if (($trace->meta['kind'] ?? null) === 'record') {
+            return; // the record keeps its own name
+        }
+
+        $calls = (array) ($trace->meta['livewire_calls'] ?? []);
+        $entry = $class.'::'.$method;
+        if (! in_array($entry, $calls, true)) {
+            $calls[] = $entry;
+        }
+        $trace->meta['livewire_calls'] = $calls;
+        $trace->meta['route'] = 'livewire:'.implode('+', $calls);
     }
 
     private static function touch(Recorder $recorder, mixed $class): void

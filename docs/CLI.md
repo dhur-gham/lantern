@@ -8,7 +8,7 @@ Requirements for the agent commands (`issues`, `issue`, `trace`, `diff`, `check`
 - JSON goes to stdout. Every payload has `schema_version` (1) and `schema`.
 - `--since` accepts `30m`, `24h`, `7d`, `2w` (units s, m, h, d, w) or a date.
 - Trace arguments accept a trace id, `last` or `latest`.
-- `--path=` and `--route=` take `Str::is` patterns (`*` matches anything, everything else is literal; a path may omit its leading slash, so `api/otp/*` matches `/api/otp/verify`). `--status=` takes `404` or a class such as `5xx`.
+- `--path=` and `--route=` take `Str::is` patterns (`*` matches anything, everything else is literal; a path may omit its leading slash, so `api/otp/*` matches `/api/otp/verify`). `--status=` takes `404` or a class such as `5xx`. Livewire update requests carry the route `livewire:<Component>::<method>` (batched calls joined with `+`; Filament `callSchemaComponentMethod` appends its first parameter after a `:`), so `--route='livewire:*Foo*'` selects them.
 - `--app=name` and `--all-apps` choose which app's rows are read (`lantern:issues`, `lantern:trace`, `lantern:check`). The default is the current app (`lantern.app`, else `app.name`); rows stored before the `app` column existed always match. Passing both is a usage error.
 - Paths are relative to `base_path()`, lines are 1-based. SQL literals and bindings are redacted.
 
@@ -130,6 +130,32 @@ echo "select * from users where id = $1" | php artisan lantern:match
 ```
 
 `lantern:issues --sql="..."` lists only the issues recorded on queries with exactly this shape.
+
+## Lantern::record() and lantern:run
+
+`Lantern\Facades\Lantern::record(string $name, Closure $fn, array $context = [])` records any code as a trace and returns the closure's result. Outside a request, job or command it starts its own trace with the route `record:<name>`; that trace is always kept, whatever the sampling says. Inside a request, job or command it adds a child span and keeps the enclosing trace. When Lantern is off it just calls the closure, so probes can stay in the code. `$context` (ids and small values) is stored on the trace; strings are truncated and values under keys such as `password` or `token` are redacted.
+
+```php
+use Lantern\Facades\Lantern;
+
+Lantern::record('invoice-export', fn () => $exporter->run($invoice), ['invoice' => $invoice->id]);
+```
+
+### lantern:run {script}
+
+Runs a PHP file with the application booted and Lantern forced on for the process; every `Lantern::record()` block in it becomes a stored trace, analysed like a request. The file runs with `$args` (array) and `$lantern` in scope. Local only: it exits 2 unless `APP_ENV=local`. It is not exposed over MCP because it executes code.
+
+Writes made by the script are rolled back by default, so a probe can create production-shaped data and leave the database as it was. Pass `--commit` to keep them.
+
+Flags: `--repeat=N` (1 to 1000; runs the script N times and adds a median `summary`), `--commit`, `--diff=<trace id or record name>` (compares the first trace of this run against that stored trace, or the latest stored `record:<name>` trace), `--arg=key=value` (any other `--key=value` or `--flag` is passed to the script as `$args['key']`), `--format`, `--pretty`.
+
+Schema `lantern.run`: `script`, `args`, `repeat`, `rolled_back` (true unless `--commit` or a connection could not be rolled back), `connections` (connection name => whether its writes were rolled back, for every connection the script touched, including ones it opened itself; Lantern's own storage connection is left alone), `status` (`ok` or `failed`; failed when the script threw or a block threw), `traces[]` (`trace_id name status duration_ms query_count query_ms issue_count issues[]`; each issue has `id key type severity title call_site count`), `summary[]` (only with `--repeat` above 1: `name runs median_ms min_ms max_ms median_queries`), `diff` (a `lantern.diff` payload, only with `--diff`), `error` (`class message`, when the script threw; the traces recorded before it are still listed), `next`, `hint`. Exit 0 ok, 1 when the script or a block failed, 2 for usage errors, a missing script, or a non-local environment, 3 when `--diff` names nothing stored.
+
+```
+php artisan lantern:run probes/export.php --repeat=5 --customer=42
+php artisan lantern:run probes/export.php --diff=invoice-export
+php artisan lantern:issues --route='record:*' --format=json
+```
 
 ## lantern:schema-snapshot
 

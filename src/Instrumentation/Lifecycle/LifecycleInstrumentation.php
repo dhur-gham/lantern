@@ -48,6 +48,14 @@ final class LifecycleInstrumentation
 
     private ?Span $routeSpan = null;
 
+    /** @var list<Span> request spans opened inside a record trace */
+    private array $nested = [];
+
+    private function inRecord(?\Lantern\Trace\Trace $trace): bool
+    {
+        return $trace !== null && ($trace->meta['kind'] ?? null) === 'record';
+    }
+
     /** @var WeakMap<object, Span> */
     private WeakMap $validations;
 
@@ -112,6 +120,12 @@ final class LifecycleInstrumentation
         $recorder = $this->recorder();
 
         if ($recorder->isActive()) {
+            if ($this->inRecord($recorder->trace())) {
+                // a kernel request made by the code being recorded (Livewire::test, a test client) belongs to that trace
+                $this->nested[] = $recorder->start(SpanType::Request, $request->method().' /'.ltrim($request->path(), '/'));
+
+                return;
+            }
             if (! $this->handled) {
                 return; // a sub-request rebinding mid-flight
             }
@@ -156,6 +170,12 @@ final class LifecycleInstrumentation
         $route = $event->route;
         $uri = '/'.ltrim($route->uri(), '/');
 
+        if ($this->inRecord($recorder->trace())) {
+            $this->routeSpan = $recorder->start(SpanType::Route, $uri, ['name' => $route->getName(), 'uri' => $route->uri(), 'action' => $route->getActionName(), 'methods' => $route->methods()]);
+
+            return;
+        }
+
         $root = $recorder->trace()?->root();
         if ($root !== null) {
             $root->name = $event->request->method().' '.$uri;
@@ -181,6 +201,19 @@ final class LifecycleInstrumentation
             return;
         }
 
+        if ($this->inRecord($recorder->trace())) {
+            if ($this->routeSpan !== null) {
+                $recorder->stop($this->routeSpan);
+                $this->routeSpan = null;
+            }
+            $span = array_pop($this->nested);
+            if ($span !== null) {
+                $recorder->stop($span);
+            }
+
+            return;
+        }
+
         $this->handled = true;
         $trace = $recorder->trace();
         if ($trace !== null) {
@@ -199,15 +232,19 @@ final class LifecycleInstrumentation
     }
 
     /** End the trace and hand it to the sink. Safe to call repeatedly. */
-    public function finish(): void
+    public function finish(bool $record = false): void
     {
         $recorder = $this->recorder();
         if (! $recorder->isActive()) {
             return;
         }
+        if (! $record && $this->inRecord($recorder->trace())) {
+            return; // requests made by recorded code end with the record block, not on their own termination
+        }
 
         $trace = $recorder->end();
         $this->routeSpan = null;
+        $this->nested = [];
         if ($trace === null) {
             return;
         }

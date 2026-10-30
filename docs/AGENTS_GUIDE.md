@@ -26,6 +26,46 @@ Always pass `--format=json`; the default table is larger and meant for humans. R
 
 Exit codes: 0 ok, 1 check failed, 2 usage/config/storage/not-found, 3 no data.
 
+## From a production error to a verified fix
+
+When the starting point is a trace in an error or APM tool:
+
+1. Take the slow or failing SQL from the span and run `php artisan lantern:match --sql="<statement>" --format=json` to find the call site and the issue recorded on it.
+2. Reproduce the request locally with production-shaped data using a probe script (below). Reproduce the production condition itself: if a field is empty locally but set in production, or the table has a handful of rows instead of thousands, the probe hides the bug.
+3. `php artisan lantern:issues --route='record:*' --format=json` lists what the probe triggered.
+4. `php artisan lantern:issue {id} --format=json` gives `call_site.file` and `line`.
+5. Fix the code.
+6. Re-run the same probe with `--diff=<name>` (the record name, or the BEFORE trace id), or call `php artisan lantern:diff {before} last`. Expect the issue under `resolved` and verdict `improved`.
+
+A probe is a PHP file that builds the data and wraps the code to measure:
+
+```php
+<?php
+// probes/export.php
+use Lantern\Facades\Lantern;
+
+$customer = Customer::factory()->hasInvoices(200)->create(['plan' => $args['plan'] ?? 'pro']);
+
+Lantern::record('invoice-export', fn () => app(InvoiceExporter::class)->run($customer), ['customer' => $customer->id]);
+```
+
+```bash
+php artisan lantern:run probes/export.php --repeat=5 --plan=enterprise
+php artisan lantern:run probes/export.php --diff=invoice-export   # after the fix
+```
+
+`lantern:run` works only with `APP_ENV=local`, turns Lantern on for that process, and rolls the script's database writes back unless you pass `--commit`. Extra `--key=value` options arrive in `$args`. `--repeat=N` adds a median summary per record name. It is not available over MCP because it executes code. Details: `docs/CLI.md`.
+
+`Lantern::record()` can also stay in application code: it is a plain call when Lantern is off, and inside a request, job or command it adds a span and keeps that trace.
+
+### Real request chains in a browser
+
+When the problem only shows up across several real requests (a login, a redirect, a Livewire flow), drive the app in a browser and read the traces afterwards with `lantern:issues --path=...` or `--route=...`.
+
+1. Log in through the application's own means (its login form or a local seeder), so the session is genuine.
+2. Playwright CLI using the installed Chrome as the driver: `playwright-cli open <url> --browser=chrome`; `state-save` and `state-load` keep the logged-in session between runs. Flags vary by version, so check `playwright-cli --help`.
+3. Alternative: Chrome DevTools MCP started with `--autoConnect`, which attaches to your own Chrome and inherits its cookies.
+
 ## CI gate
 
 ```bash

@@ -98,6 +98,19 @@ final class LivewireInstrumentationTest extends TestCase
             $this->markTestSkipped('Livewire::test does not flag an update request here');
         }
 
-        $this->assertSame('livewire:'.ProbeComponent::class.'@inc', $trace->meta['route']);
+        $this->assertSame('livewire:'.ProbeComponent::class.'::inc', $trace->meta['route']);
+    }
+
+    public function test_batched_calls_join_with_plus_and_schema_param_is_appended(): void
+    {
+        $recorder = $this->app->make(Recorder::class);
+        $recorder->begin(['kind' => 'request']);
+        $trace = $recorder->trace();
+
+        $m = new \ReflectionMethod(\Lantern\Instrumentation\Livewire\LivewireInstrumentation::class, 'addCall');
+        $m->invoke(null, $trace, 'App\Foo', 'a');
+        $m->invoke(null, $trace, 'App\Foo', 'callSchemaComponentMethod:form.x.item_images');
+
+        $this->assertSame('livewire:App\Foo::a+App\Foo::callSchemaComponentMethod:form.x.item_images', $trace->meta['route']);
     }
 }
