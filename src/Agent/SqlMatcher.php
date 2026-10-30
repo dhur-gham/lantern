@@ -173,7 +173,8 @@ final class SqlMatcher
                 }
 
                 $site = Findings::site($node['call_site'] ?? null);
-                $gk = $type.'|'.md5($nodeShape).'|'.Findings::siteString($site).'|'.($site['function'] ?? '');
+                // by file and function, not line: traces recorded before the code moved describe the same call site (rows are newest first, so the first one seen carries the current line)
+                $gk = $type.'|'.md5($nodeShape).'|'.($site['file'] ?? '-').'|'.($site['function'] ?? '');
                 if (! isset($groups[$gk])) {
                     if ($type === 'similar' && ++$similarGroups > self::MAX_SIMILAR_GROUPS) {
                         continue;

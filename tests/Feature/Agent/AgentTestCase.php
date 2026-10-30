@@ -67,7 +67,7 @@ abstract class AgentTestCase extends TestCase
      * @param list<string> $issueKeys
      * @param array<string, mixed> $over
      */
-    protected function seedTrace(string $id, int $queries, array $issueKeys = [], int $ms = 40, string $at = '2026-01-01 10:00:00', string $route = 'posts.index', string $sql = "select * from `users` where `email` = 'jane@example.com' and `id` = 7"): void
+    protected function seedTrace(string $id, int $queries, array $issueKeys = [], int $ms = 40, string $at = '2026-01-01 10:00:00', string $route = 'posts.index', string $sql = "select * from `users` where `email` = 'jane@example.com' and `id` = 7", int $line = 12, ?string $function = null): void
     {
         $children = [];
         $spanIds = [];
@@ -75,7 +75,7 @@ abstract class AgentTestCase extends TestCase
             $spanIds[] = $i + 2;
             $children[] = [
                 'id' => $i + 2, 'type' => 'query', 'name' => $sql, 'start_ms' => $i, 'duration_ms' => 1.5, 'self_ms' => 1.5,
-                'call_site' => ['file' => base_path('app/Foo.php'), 'line' => 12],
+                'call_site' => ['file' => base_path('app/Foo.php'), 'line' => $line] + ($function === null ? [] : ['function' => $function]),
                 'meta' => ['sql' => $sql, 'normalized_sql' => 'select * from `users` where `email` = ? and `id` = ?', 'fingerprint' => 'fp1', 'bindings' => ['jane@example.com', 7]],
                 'children' => [],
             ];

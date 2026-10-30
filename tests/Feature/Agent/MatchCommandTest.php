@@ -30,6 +30,20 @@ final class MatchCommandTest extends AgentTestCase
         $this->assertStringContainsString('lantern:issue k1', $d['next']);
     }
 
+    public function test_the_same_call_site_recorded_at_two_lines_is_one_match_with_the_latest_line(): void
+    {
+        $this->seedTrace('old', 2, at: '2026-01-01 10:00:00', line: 121, function: 'Orders@count');
+        $this->seedTrace('new', 3, at: '2026-01-02 10:00:00', line: 126, function: 'Orders@count');
+
+        [$code, $d] = $this->jsonOut('lantern:match', ['--sql' => self::PROD]);
+
+        $this->assertSame(0, $code);
+        $this->assertCount(1, $d['matches']);
+        $this->assertSame(126, $d['matches'][0]['call_site']['line']);
+        $this->assertSame(5, $d['matches'][0]['occurrences']);
+        $this->assertEqualsCanonicalizing(['old', 'new'], $d['matches'][0]['trace_ids']);
+    }
+
     public function test_matches_a_span_without_an_issue(): void
     {
         $this->seedTrace('t1', 2);
