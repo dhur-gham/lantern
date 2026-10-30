@@ -19,6 +19,10 @@ return new class extends Migration
 
     public function up(): void
     {
+        if (\Lantern\Storage\MigrationGuard::skip($this->getConnection())) {
+            return;
+        }
+
         $schema = Schema::connection($this->getConnection());
         foreach (self::TABLES as $name) {
             if ($schema->hasColumn($name, 'app')) {
@@ -32,6 +36,10 @@ return new class extends Migration
 
     public function down(): void
     {
+        if (\Lantern\Storage\MigrationGuard::skip($this->getConnection())) {
+            return;
+        }
+
         $schema = Schema::connection($this->getConnection());
         foreach (self::TABLES as $name) {
             if ($schema->hasTable($name) && $schema->hasColumn($name, 'app')) {

@@ -25,13 +25,30 @@ final class ResolvedIssuesTest extends AgentTestCase
         parent::setUp();
         $this->app['config']->set('lantern.explain', true);
         $this->app['config']->set('lantern.detectors', [NPlusOneDetector::class, SlowQueryDetector::class, MissingIndexDetector::class, PlanFlipDetector::class]);
+        $this->source('<?php // v1');
+    }
+
+    protected function tearDown(): void
+    {
+        @unlink(base_path('app/Orders.php'));
+        parent::tearDown();
+    }
+
+    private function source(string $code): void
+    {
+        if (! is_dir(base_path('app'))) {
+            mkdir(base_path('app'), 0777, true);
+        }
+        file_put_contents(base_path('app/Orders.php'), $code);
+        clearstatcache();
+        touch(base_path('app/Orders.php'), time() + random_int(1, 10_000));
     }
 
     /** @param list<array<string, mixed>> $queries */
-    private function trace(array $queries): Trace
+    private function trace(array $queries, ?string $route = null): Trace
     {
         $recorder = new Recorder;
-        $trace = $recorder->begin(['kind' => 'request', 'method' => 'GET', 'path' => '/orders', 'status' => 200]);
+        $trace = $recorder->begin(['kind' => 'request', 'method' => 'GET', 'path' => '/orders', 'status' => 200] + ($route === null ? [] : ['route' => $route]));
         foreach ($queries as $q) {
             $ms = (float) ($q['ms'] ?? 10.0);
             $now = hrtime(true);
@@ -85,6 +102,64 @@ final class ResolvedIssuesTest extends AgentTestCase
         $this->assertNull($this->resolvedAt($issue->key));
 
         $this->persist($this->trace([['ms' => 20.0, 'line' => 15]]));
+
+        $this->assertNotNull($this->resolvedAt($issue->key));
+    }
+
+    public function test_a_finding_whose_query_was_removed_resolves_when_the_same_route_runs_its_call_site_without_it(): void
+    {
+        $issue = $this->slowIssue();
+        $this->persist($this->trace([['ms' => 300.0]], 'orders.index'), [$issue]);
+
+        $this->source('<?php // v2, the query is gone');
+        $this->persist($this->trace([['fp' => 'fp-other', 'ms' => 5.0, 'sql' => 'select * from "users"']], 'orders.index'));
+
+        $this->assertNotNull($this->resolvedAt($issue->key));
+    }
+
+    public function test_a_removed_query_in_a_job_resolves_by_its_job_route(): void
+    {
+        $issue = $this->slowIssue();
+        $this->persist($this->trace([['ms' => 300.0]], 'job:App\Jobs\HideMerchantItemsJob'), [$issue]);
+
+        $this->source('<?php // v2, the query is gone');
+        $this->persist($this->trace([['fp' => 'fp-other', 'ms' => 5.0, 'sql' => 'select * from "users"']], 'job:App\Jobs\HideMerchantItemsJob'));
+
+        $this->assertNotNull($this->resolvedAt($issue->key));
+    }
+
+    public function test_an_absent_query_with_unchanged_code_stays_open_as_a_data_difference(): void
+    {
+        $issue = $this->slowIssue();
+        $this->persist($this->trace([['ms' => 300.0]], 'orders.index'), [$issue]);
+
+        // the call-site function ran again, but the data never reached the query (no barcodes, no lookup)
+        $this->persist($this->trace([['fp' => 'fp-other', 'ms' => 5.0, 'sql' => 'select * from "users"']], 'orders.index'));
+
+        $this->assertNull($this->resolvedAt($issue->key));
+    }
+
+    public function test_an_absent_query_does_not_resolve_without_a_route_or_on_another_route_or_without_the_call_site(): void
+    {
+        $issue = $this->slowIssue();
+        $this->persist($this->trace([['ms' => 300.0]], 'orders.index'), [$issue]);
+        $other = ['fp' => 'fp-other', 'ms' => 5.0, 'sql' => 'select * from "users"'];
+
+        $this->source('<?php // v2');
+        $this->persist($this->trace([$other]));
+        $this->persist($this->trace([$other], 'orders.show'));
+        $this->persist($this->trace([$other + ['fn' => 'Other@run']], 'orders.index'));
+
+        $this->assertNull($this->resolvedAt($issue->key));
+    }
+
+    public function test_a_closure_finding_resolves_when_lines_above_it_moved_the_closure(): void
+    {
+        $issue = $this->slowIssue();
+        $issue->callSite['function'] = '{closure:app/Orders.php:58}';
+        $this->persist($this->trace([['ms' => 300.0, 'fn' => '{closure:app/Orders.php:58}']]), [$issue]);
+
+        $this->persist($this->trace([['ms' => 20.0, 'fn' => '{closure:app/Orders.php:61}']]));
 
         $this->assertNotNull($this->resolvedAt($issue->key));
     }

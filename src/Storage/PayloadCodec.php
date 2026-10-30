@@ -10,6 +10,11 @@ final class PayloadCodec
 
     private const DEPTH = 4096;
 
+    /** Encoded size above which long strings are cut down. */
+    public const MAX_BYTES = 4_194_304;
+
+    private const MAX_STRING = 8192;
+
     /** @param array<string, mixed> $data */
     public static function encode(array $data, bool $compress): string
     {
@@ -18,7 +23,35 @@ final class PayloadCodec
             $json = '{}';
         }
 
-        return $compress && function_exists('gzencode') ? 'gz:'.base64_encode((string) gzencode($json, 6)) : $json;
+        if (strlen($json) > self::MAX_BYTES) {
+            $json = self::shrink($data, strlen($json));
+        }
+
+        if (! $compress || ! function_exists('gzencode')) {
+            return $json;
+        }
+
+        $gz = (string) gzencode($json, 6);
+        unset($json);
+
+        return 'gz:'.base64_encode($gz);
+    }
+
+    /** @param array<string, mixed> $data */
+    private static function shrink(array $data, int $original): string
+    {
+        array_walk_recursive($data, static function (&$value): void {
+            if (is_string($value) && strlen($value) > self::MAX_STRING) {
+                $value = substr($value, 0, self::MAX_STRING).'...[truncated '.(strlen($value) - self::MAX_STRING).' bytes]';
+            }
+        });
+
+        $json = json_encode($data, self::JSON_FLAGS, self::DEPTH);
+        if ($json === false || strlen($json) > self::MAX_BYTES) {
+            return (string) json_encode(['truncated' => true, 'original_bytes' => $original]);
+        }
+
+        return $json;
     }
 
     /** @return array<string, mixed>|null null when the payload cannot be decoded */

@@ -26,7 +26,7 @@ use Lantern\Trace\Recorder;
 
 class LanternServiceProvider extends ServiceProvider
 {
-    public const VERSION = '0.5.0';
+    public const VERSION = '0.5.1';
 
     /** Detectors added after 0.3: merged into a published `detectors` list that predates them. */
     public const ADDED_DETECTORS = [\Lantern\Detection\Detectors\PlanFlipDetector::class];

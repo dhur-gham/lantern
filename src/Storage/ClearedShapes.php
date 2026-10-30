@@ -85,7 +85,7 @@ final class ClearedShapes
             }
 
             $site = Findings::site($span->callSite);
-            $sites[$fp."\0".($site === null ? '-' : $site['file'].'#'.($site['function'] ?? ''))] = true;
+            $sites[$fp."\0".Findings::where($site)] = true;
 
             if (($index || $flip) && is_string($m['sql'] ?? null) && ExplainRunner::isSelect($m['sql'])) {
                 $selects[$fp] = max($selects[$fp] ?? 0.0, (float) ($m['time_ms'] ?? 0));

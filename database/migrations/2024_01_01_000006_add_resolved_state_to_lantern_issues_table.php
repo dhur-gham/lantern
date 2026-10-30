@@ -18,6 +18,10 @@ return new class extends Migration
 
     public function up(): void
     {
+        if (\Lantern\Storage\MigrationGuard::skip($this->getConnection())) {
+            return;
+        }
+
         $schema = Schema::connection($this->getConnection());
         if (! $schema->hasColumn('lantern_issues', 'resolved_at')) {
             $schema->table('lantern_issues', function (Blueprint $table) {
@@ -51,6 +55,10 @@ return new class extends Migration
 
     public function down(): void
     {
+        if (\Lantern\Storage\MigrationGuard::skip($this->getConnection())) {
+            return;
+        }
+
         $schema = Schema::connection($this->getConnection());
         foreach (['in_size', 'sql_hash'] as $column) {
             if ($schema->hasTable('lantern_issues') && $schema->hasColumn('lantern_issues', $column)) {

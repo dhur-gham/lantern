@@ -56,6 +56,17 @@ final class PlanEvidenceTest extends AgentTestCase
         }
     }
 
+    public function test_a_timed_out_replay_hints_at_the_timeout_setting(): void
+    {
+        $this->seedPlanIssue(['rows_read' => 5000, 'rows_returned' => null, 'rows_returned_why' => 'timeout']);
+
+        [, $data] = $this->jsonOut('lantern:issue', ['key' => 'pk1']);
+        $evidence = $data['issue']['evidence'];
+
+        $this->assertSame('timeout', $evidence['rows_returned_why']);
+        $this->assertStringContainsString('LANTERN_EXPLAIN_ANALYZE_TIMEOUT_MS', $evidence['rows_returned_hint']);
+    }
+
     public function test_issue_without_plan_data_keeps_its_evidence_unchanged(): void
     {
         $this->seedTrace('t2', 2, ['pk2']);

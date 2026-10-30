@@ -23,6 +23,9 @@ final class DatabaseTraceStore implements TraceStore
     /** Same for the `shape` and `resolved_at` columns of lantern_issues. */
     private bool $legacyResolve = false;
 
+    /** Same for the `site_hash` column of lantern_issues (resolve by absence stays off until it exists). */
+    private bool $legacyCode = false;
+
     public function __construct(
         private readonly ConnectionResolverInterface $db,
         private readonly ?string $connection = null,
@@ -63,6 +66,8 @@ final class DatabaseTraceStore implements TraceStore
                 } catch (QueryException $e) {
                     if (! $this->legacyApp && self::missingColumn($e->getMessage(), ['app'])) {
                         $this->legacyApp = true;
+                    } elseif (! $this->legacyCode && self::missingColumn($e->getMessage(), ['site_hash'])) {
+                        $this->legacyCode = true;
                     } elseif (! $this->legacyResolve && self::missingColumn($e->getMessage(), ['shape', 'resolved_at', 'in_size', 'sql_hash'])) {
                         $this->legacyResolve = true;
                     } else {
@@ -81,24 +86,25 @@ final class DatabaseTraceStore implements TraceStore
     {
         $withApp = ! $this->legacyApp;
         $withResolve = ! $this->legacyResolve;
+        $withCode = $withResolve && ! $this->legacyCode;
         $app = $withApp ? $this->str($this->app, 100) : null;
         if ($withApp) {
             $row['app'] = $app;
         }
 
-        $conn->transaction(function () use ($conn, $row, $issues, $startedAt, $trace, $now, $withApp, $withResolve, $app): void {
+        $conn->transaction(function () use ($conn, $row, $issues, $startedAt, $trace, $now, $withApp, $withResolve, $withCode, $app): void {
             $conn->table('lantern_traces')->insert($row);
 
-            $rows = $this->issueRows($issues, $startedAt, (string) $row['id'], $withResolve, $trace);
+            $rows = $this->issueRows($issues, $startedAt, (string) $row['id'], $withResolve, $trace, $withCode);
             if ($rows !== []) {
                 if ($withApp) {
                     $rows = array_map(fn (array $r): array => $r + ['app' => $app], $rows);
                 }
-                $conn->table('lantern_issues')->upsert($rows, ['issue_key'], $this->issueUpdate($conn, $withApp, $withResolve));
+                $conn->table('lantern_issues')->upsert($rows, ['issue_key'], $this->issueUpdate($conn, $withApp, $withResolve, $withCode));
             }
 
             if ($withResolve) {
-                $this->resolveCleared($conn, $trace, $issues, $now);
+                $this->resolveCleared($conn, $trace, $issues, $now, $withCode);
             }
         });
     }
@@ -109,10 +115,10 @@ final class DatabaseTraceStore implements TraceStore
      *
      * @param list<Issue> $issues
      */
-    private function resolveCleared(Connection $conn, Trace $trace, array $issues, string $now): void
+    private function resolveCleared(Connection $conn, Trace $trace, array $issues, string $now, bool $withCode): void
     {
         try {
-            $conn->transaction(function () use ($conn, $trace, $issues, $now): void {
+            $conn->transaction(function () use ($conn, $trace, $issues, $now, $withCode): void {
                 $config = (array) config('lantern', []);
                 $max = (int) ($config['thresholds']['max_issues_per_trace'] ?? 50);
                 if ($max > 0 && count($issues) >= $max) {
@@ -141,11 +147,69 @@ final class DatabaseTraceStore implements TraceStore
                         $conn->table('lantern_issues')->whereIn('issue_key', $ids)->update(['resolved_at' => $now]);
                     }
                 }
+
+                if ($withCode) {
+                    $this->resolveRemoved($conn, $trace, $fired, $candidates, $now);
+                }
             });
         } catch (QueryException $e) {
             if (self::missingColumn($e->getMessage(), ['shape', 'resolved_at'])) {
                 throw $e;
             }
+        }
+    }
+
+    /**
+     * Resolves open findings whose query is gone: the same route ran again, executed the finding's call-site function
+     * without the query, and the call-site file changed since the finding fired. The same code that skipped the query
+     * is a data difference, not a fix. Without a route, the function in the trace or a stored hash, absence proves nothing.
+     *
+     * @param list<string> $fired shapes of the findings this trace produced
+     * @param array<string, mixed> $ran shapes this trace ran clean (resolved by the caller)
+     */
+    private function resolveRemoved(Connection $conn, Trace $trace, array $fired, array $ran, string $now): void
+    {
+        $route = $trace->meta['route'] ?? null;
+        if (! is_string($route) || $route === '') {
+            return;
+        }
+
+        $executed = [];
+        foreach ($trace->spans() as $span) {
+            $site = Findings::site($span->callSite);
+            if ($site !== null && isset($site['function'])) {
+                $executed[Findings::where($site)] = true;
+            }
+        }
+        if ($executed === []) {
+            return;
+        }
+
+        $types = [Issue::TYPE_N_PLUS_ONE, Issue::TYPE_SLOW, Issue::TYPE_DUPLICATE, Issue::TYPE_LAZY_LOAD];
+        $rows = $conn->table('lantern_issues as i')
+            ->join('lantern_traces as t', 't.id', '=', 'i.last_trace_id')
+            ->whereNull('i.resolved_at')
+            ->where('t.route', $route)
+            ->whereIn('i.type', $types)
+            ->limit(500)
+            ->whereNotNull('i.site_hash')
+            ->get(['i.issue_key', 'i.shape', 'i.call_site', 'i.site_hash']);
+
+        $ids = [];
+        foreach ($rows as $row) {
+            if (in_array((string) $row->shape, $fired, true) || isset($ran[(string) $row->shape])) {
+                continue;
+            }
+            $site = Findings::site($row->call_site);
+            if ($site !== null && isset($site['function']) && isset($executed[Findings::where($site)])) {
+                $current = SiteHash::of($site);
+                if ($current !== null && $current !== (string) $row->site_hash) {
+                    $ids[] = $row->issue_key;
+                }
+            }
+        }
+        if ($ids !== []) {
+            $conn->table('lantern_issues')->whereIn('issue_key', $ids)->update(['resolved_at' => $now]);
         }
     }
 
@@ -189,7 +253,7 @@ final class DatabaseTraceStore implements TraceStore
      * @param list<Issue> $issues
      * @return list<array<string, mixed>>
      */
-    private function issueRows(array $issues, string $now, string $traceId, bool $withResolve, ?Trace $trace = null): array
+    private function issueRows(array $issues, string $now, string $traceId, bool $withResolve, ?Trace $trace = null, bool $withCode = false): array
     {
         $rows = [];
         $spans = [];
@@ -221,7 +285,8 @@ final class DatabaseTraceStore implements TraceStore
                 'first_seen' => $now,
                 'last_seen' => $now,
                 'last_trace_id' => $traceId,
-            ] + ($withResolve ? ['shape' => $this->str(Findings::shape($issue->toArray()), 64), 'resolved_at' => null] + $this->queryFacts($issue, $spans) : []);
+            ] + ($withResolve ? ['shape' => $this->str(Findings::shape($issue->toArray()), 64), 'resolved_at' => null] + $this->queryFacts($issue, $spans) : [])
+                + ($withCode ? ['site_hash' => SiteHash::of(Findings::site($issue->callSite))] : []);
         }
 
         return array_values($rows);
@@ -251,7 +316,7 @@ final class DatabaseTraceStore implements TraceStore
     }
 
     /** @return array<string, Expression> */
-    private function issueUpdate(Connection $conn, bool $withApp = false, bool $withResolve = false): array
+    private function issueUpdate(Connection $conn, bool $withApp = false, bool $withResolve = false, bool $withCode = false): array
     {
         $g = $conn->getQueryGrammar();
         $table = $g->wrapTable('lantern_issues');
@@ -290,6 +355,10 @@ final class DatabaseTraceStore implements TraceStore
             $update['sql_hash'] = new Expression($keep.$cur('sql_hash').' else '.$new('sql_hash').' end');
             $update['in_size'] = new Expression($keep.$cur('in_size').' else '.$new('in_size').' end');
             $update['resolved_at'] = new Expression('NULL');
+        }
+        if ($withCode) {
+            // the code a finding last fired on is the baseline a later absence is judged against
+            $update['site_hash'] = new Expression($new('site_hash'));
         }
 
         return $update;

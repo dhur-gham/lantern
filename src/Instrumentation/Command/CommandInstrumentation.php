@@ -70,7 +70,7 @@ final class CommandInstrumentation
             return;
         }
 
-        $trace = $recorder->begin($meta, null, SpanType::Command);
+        $trace = $recorder->begin($meta + ['route' => 'command:'.$name], null, SpanType::Command);
         $root = $trace->root();
         if ($root === null) {
             return;

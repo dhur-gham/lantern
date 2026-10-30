@@ -54,6 +54,7 @@ final class CommandTraceTest extends TestCase
         $this->assertSame(SpanType::Command, $trace->root()->type);
         $this->assertSame('app:report', $trace->root()->name);
         $this->assertSame('command', $trace->meta['kind']);
+        $this->assertSame('command:app:report', $trace->meta['route']);
         $this->assertSame(2, $trace->meta['exit_code']);
         $this->assertSame('failed', $trace->meta['status']);
         $this->assertSame(2, $trace->root()->meta['exit_code']);

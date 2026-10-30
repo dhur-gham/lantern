@@ -17,6 +17,10 @@ return new class extends Migration
 
     public function up(): void
     {
+        if (\Lantern\Storage\MigrationGuard::skip($this->getConnection())) {
+            return;
+        }
+
         $schema = Schema::connection($this->getConnection());
         if ($schema->hasColumn('lantern_plan_samples', 'sql_hash')) {
             return;
@@ -29,6 +33,10 @@ return new class extends Migration
 
     public function down(): void
     {
+        if (\Lantern\Storage\MigrationGuard::skip($this->getConnection())) {
+            return;
+        }
+
         $schema = Schema::connection($this->getConnection());
         if (! $schema->hasTable('lantern_plan_samples') || ! $schema->hasColumn('lantern_plan_samples', 'sql_hash')) {
             return;

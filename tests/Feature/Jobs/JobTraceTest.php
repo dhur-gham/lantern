@@ -19,6 +19,7 @@ final class JobTraceTest extends JobTestCase
         $this->assertSame(SpanType::Job, $root->type);
         $this->assertSame(NPlusOneJob::class, $root->name);
         $this->assertSame('job', $trace->meta['kind']);
+        $this->assertSame('job:'.NPlusOneJob::class, $trace->meta['route']);
         $this->assertSame('processed', $trace->meta['status']);
         $this->assertSame('sync', $trace->meta['connection']);
         $this->assertSame(1, $trace->meta['attempts']);
