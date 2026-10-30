@@ -93,6 +93,63 @@ PHP
         $this->assertSame(1, DB::table('r_items')->count());
     }
 
+    private function otherConnection(): string
+    {
+        $file = tempnam(sys_get_temp_dir(), 'lantern-other-');
+        $this->files[] = $file;
+        config(['database.connections.other' => ['driver' => 'sqlite', 'database' => $file, 'prefix' => '']]);
+        Schema::connection('other')->create('o_items', function (Blueprint $t) {
+            $t->id();
+            $t->string('name')->nullable();
+        });
+        // the script has to open it again while it runs
+        DB::purge('other');
+
+        return $file;
+    }
+
+    public function test_rolls_back_every_connection_the_script_touches_including_ones_opened_mid_run(): void
+    {
+        $this->otherConnection();
+        $script = $this->script(<<<'PHP'
+DB::table('r_items')->insert(['name' => 'default']);
+DB::connection('other')->table('o_items')->insert(['name' => 'other']);
+Lantern::record('both', fn () => DB::connection('other')->table('o_items')->count());
+PHP
+        );
+
+        [$code, $out] = $this->run_('lantern:run', ['script' => $script]);
+        $data = $this->decode($out);
+
+        $this->assertSame(0, $code, $out);
+        $this->assertTrue($data['rolled_back']);
+        $this->assertSame(['testing' => true, 'other' => true], $data['connections']);
+        $this->assertSame(0, DB::table('r_items')->count());
+        $this->assertSame(0, DB::connection('other')->table('o_items')->count());
+
+        [, $out] = $this->run_('lantern:run', ['script' => $script, '--commit' => true]);
+        $data = $this->decode($out);
+        $this->assertFalse($data['rolled_back']);
+        $this->assertSame(1, DB::connection('other')->table('o_items')->count());
+    }
+
+    public function test_requests_outside_record_blocks_are_not_stored(): void
+    {
+        $script = $this->script(<<<'PHP'
+app('router')->get('/outside', fn () => DB::select('select 1'));
+$kernel = app(Illuminate\Contracts\Http\Kernel::class);
+$request = Illuminate\Http\Request::create('/outside');
+$kernel->terminate($request, $kernel->handle($request));
+Lantern::record('inside', fn () => DB::select('select 2'));
+PHP
+        );
+
+        [$code, $out] = $this->run_('lantern:run', ['script' => $script]);
+
+        $this->assertSame(0, $code, $out);
+        $this->assertSame(['record:inside'], DB::table('lantern_traces')->pluck('route')->all());
+    }
+
     public function test_repeat_reports_a_median_per_record_name(): void
     {
         [$code, $out] = $this->run_('lantern:run', ['script' => $this->loopScript(), '--repeat' => '3']);

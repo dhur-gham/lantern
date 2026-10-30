@@ -4,13 +4,13 @@ declare(strict_types=1);
 
 namespace Lantern\Console;
 
-use Illuminate\Support\Facades\DB;
 use Lantern\Agent\AgentCommand;
 use Lantern\Agent\AgentException;
 use Lantern\Agent\Findings;
 use Lantern\Agent\Reader;
 use Lantern\Instrumentation\Lifecycle\MemorySink;
 use Lantern\Instrumentation\Lifecycle\PersistSink;
+use Lantern\Instrumentation\Lifecycle\RecordOnlySink;
 use Lantern\Instrumentation\Lifecycle\TraceSink;
 use Lantern\LanternServiceProvider;
 use Lantern\Recording;
@@ -78,11 +78,18 @@ final class RunCommand extends AgentCommand
         $recording = $this->laravel->make(Recording::class);
         $recording->forget();
 
+        $rollback = $opts['commit'] ? null : new ConnectionRollback(
+            $this->laravel['db'],
+            $this->laravel['events'],
+            $this->storageConnection(),
+        );
+
         $error = null;
         $runs = [];
+        $connections = [];
         for ($i = 0; $i < $opts['repeat']; $i++) {
             $before = count($recording->finished());
-            $error = $this->runScript($script, $opts['args'], $recording, ! $opts['commit']);
+            $error = $this->runScript($script, $opts['args'], $recording, $rollback, $connections);
             $runs[] = array_slice($recording->finished(), $before);
             if ($error !== null) {
                 break;
@@ -99,7 +106,8 @@ final class RunCommand extends AgentCommand
             'script' => $opts['script'],
             'args' => $opts['args'],
             'repeat' => $opts['repeat'],
-            'rolled_back' => ! $opts['commit'],
+            'rolled_back' => ! $opts['commit'] && ! in_array(false, $connections, true),
+            'connections' => $connections,
             'status' => $failed ? 'failed' : 'ok',
             'traces' => $traces,
         ];
@@ -126,17 +134,12 @@ final class RunCommand extends AgentCommand
 
     /**
      * @param array<string, mixed> $args
+     * @param array<string, bool> $connections rolled back or not, per connection the script touched; updated in place
      * @return array{class: string, message: string}|null
      */
-    private function runScript(string $script, array $args, Recording $recording, bool $rollback): ?array
+    private function runScript(string $script, array $args, Recording $recording, ?ConnectionRollback $rollback, array &$connections): ?array
     {
-        $conn = null;
-        $level = 0;
-        if ($rollback) {
-            $conn = DB::connection();
-            $level = $conn->transactionLevel();
-            $conn->beginTransaction();
-        }
+        $rollback?->start();
 
         try {
             (static function (string $__script, array $args, Recording $lantern): void {
@@ -147,15 +150,20 @@ final class RunCommand extends AgentCommand
         } catch (Throwable $e) {
             return ['class' => $e::class, 'message' => mb_substr($e->getMessage(), 0, 500)];
         } finally {
-            if ($conn !== null) {
-                try {
-                    while ($conn->transactionLevel() > $level) {
-                        $conn->rollBack();
-                    }
-                } catch (Throwable) {
+            if ($rollback !== null) {
+                foreach ($rollback->rollBack() as $name => $done) {
+                    $connections[$name] = ($connections[$name] ?? true) && $done;
                 }
             }
         }
+    }
+
+    /** @return list<string> Lantern's own storage connection, unless it is the default one */
+    private function storageConnection(): array
+    {
+        $name = config('lantern.storage.connection');
+
+        return is_string($name) && $name !== '' && $name !== config('database.default') ? [$name] : [];
     }
 
     private function deferredSink(): ?PersistSink
@@ -172,7 +180,7 @@ final class RunCommand extends AgentCommand
             PHP_INT_MAX,
         );
         $this->laravel->forgetInstance(TraceSink::class);
-        $this->laravel->instance(TraceSink::class, $sink);
+        $this->laravel->instance(TraceSink::class, new RecordOnlySink($sink));
 
         return $sink;
     }

@@ -92,6 +92,30 @@ final class Findings
         return $site === null ? '-' : $site['file'].'#'.preg_replace('/:\d+(?=\})/', '', $site['function'] ?? '');
     }
 
+    /**
+     * File and enclosing function of a call site, however deep in closures: a query issued from a closure inside a
+     * function counts as that function running.
+     *
+     * @param array{file: string, line: int, function?: string}|null $site
+     */
+    public static function whereFunction(?array $site): string
+    {
+        if ($site === null) {
+            return '-';
+        }
+
+        $function = $site['function'] ?? '';
+        $inner = $function;
+        while (preg_match('/^\{closure:(.+?)(?::\d+)?\}$/', $inner, $m) === 1) {
+            $inner = $m[1];
+        }
+        if ($inner !== $function && preg_match('/(?:^|::)(\w+)\(\)$/', $inner, $m) === 1) {
+            $function = $m[1];
+        }
+
+        return $site['file'].'#'.$function;
+    }
+
     /** @param array<string, mixed> $i */
     public static function keyOf(array $i): string
     {

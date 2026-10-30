@@ -101,7 +101,7 @@ final class Recording
     private function finish(\Lantern\Trace\Trace $trace): void
     {
         try {
-            $this->app->make(LifecycleInstrumentation::class)->finish();
+            $this->app->make(LifecycleInstrumentation::class)->finish(true);
             $queries = array_filter($trace->spans(), fn ($s) => $s->type === SpanType::Query && ($s->meta['kind'] ?? null) !== 'transaction');
             $issues = (array) ($trace->meta['issues'] ?? []);
             $this->finished[] = [

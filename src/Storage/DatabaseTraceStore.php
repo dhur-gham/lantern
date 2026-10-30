@@ -178,7 +178,7 @@ final class DatabaseTraceStore implements TraceStore
         foreach ($trace->spans() as $span) {
             $site = Findings::site($span->callSite);
             if ($site !== null && isset($site['function'])) {
-                $executed[Findings::where($site)] = true;
+                $executed[Findings::whereFunction($site)] = true;
             }
         }
         if ($executed === []) {
@@ -201,7 +201,7 @@ final class DatabaseTraceStore implements TraceStore
                 continue;
             }
             $site = Findings::site($row->call_site);
-            if ($site !== null && isset($site['function']) && isset($executed[Findings::where($site)])) {
+            if ($site !== null && isset($site['function']) && isset($executed[Findings::whereFunction($site)])) {
                 $current = SiteHash::of($site);
                 if ($current !== null && $current !== (string) $row->site_hash) {
                     $ids[] = $row->issue_key;

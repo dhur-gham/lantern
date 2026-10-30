@@ -143,6 +143,10 @@ final class LivewireInstrumentation
             return;
         }
 
+        if (($trace->meta['kind'] ?? null) === 'record') {
+            return;
+        }
+
         if ($method === null) {
             if (! str_starts_with((string) ($trace->meta['route'] ?? ''), 'livewire:')) {
                 $trace->meta['route'] = 'livewire:'.$class;
@@ -165,6 +169,10 @@ final class LivewireInstrumentation
 
     private static function addCall(\Lantern\Trace\Trace $trace, string $class, string $method): void
     {
+        if (($trace->meta['kind'] ?? null) === 'record') {
+            return; // the record keeps its own name
+        }
+
         $calls = (array) ($trace->meta['livewire_calls'] ?? []);
         $entry = $class.'::'.$method;
         if (! in_array($entry, $calls, true)) {
