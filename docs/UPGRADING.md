@@ -14,7 +14,7 @@ If your team applies schema changes by hand, print the SQL instead of migrating 
 
 **Fixes.**
 
-- A chunked bulk write (`UPDATE` or `DELETE` with an `IN` list, `BETWEEN` or an id range; multi-row `INSERT`; `INSERT ... SELECT`) is no longer reported as `n_plus_one`. A per-row `WHERE id = ?` loop still is.
+- A chunked bulk write (`UPDATE` or `DELETE` with an `IN` list, `BETWEEN` or an id range; multi-row `INSERT`; `INSERT ... SELECT`) is no longer reported as `n_plus_one`. A statement that pins one row, with an equality on every column of the table's primary or another unique key (read from the index catalog on MySQL and PostgreSQL; `id` and `uuid` when the catalog has nothing), still counts as a per-row loop even with an `IN` list in the same `WHERE`.
 - Closure line numbers no longer enter a finding's identity, so adding lines above a closure does not turn a finding into resolved plus new in `lantern:diff`.
 - A stored trace payload is capped at 4 MiB: above that, strings over 8 KiB are cut with a `...[truncated N bytes]` marker, and a payload still over the cap is stored as `{"truncated": true, "original_bytes": N}`. Encoding no longer holds the JSON and its compressed copy at the same time. Normal traces are far below the cap.
 - When a `rows_returned` replay hits its time limit, the evidence now carries `rows_returned_hint` pointing at `LANTERN_EXPLAIN_ANALYZE_TIMEOUT_MS`.

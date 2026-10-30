@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Lantern\Tests\Unit\Detection\Detectors;
 
 use Lantern\Detection\Detectors\NPlusOneDetector;
+use Lantern\Detection\Explain\Catalog;
 use Lantern\Detection\Issue;
 use Lantern\Trace\Recorder;
 use Lantern\Trace\SpanType;
@@ -141,6 +142,61 @@ final class NPlusOneDetectorTest extends TestCase
             $this->q('update `posts` set `x` = ? where `merchant_id` = ? and `id` in (?, ?, ?)', [1, 2, 3, 4, 5]);
         }
         $this->assertSame([], $this->det()->detect($this->trace()));
+    }
+
+    /** @param array<string, list<array{name: string, columns: list<string>, unique: bool}>> $indexes */
+    private function catalog(array $indexes): Catalog
+    {
+        return new class($indexes) implements Catalog
+        {
+            public function __construct(private readonly array $indexes) {}
+
+            public function indexes(?string $connection, string $table): array
+            {
+                return $this->indexes[$table] ?? [];
+            }
+
+            public function stats(?string $connection, string $table): array
+            {
+                return ['rows' => null, 'columns' => []];
+            }
+        };
+    }
+
+    public function test_equality_on_the_primary_key_column_makes_a_bulk_looking_write_per_row(): void
+    {
+        $catalog = $this->catalog(['items' => [['name' => 'PRIMARY', 'columns' => ['item_id'], 'unique' => true]]]);
+        for ($i = 1; $i <= 6; $i++) {
+            $this->q('update `items` set `x` = ? where `state` in (?, ?) and `item_id` = ?', [1, 'a', 'b', $i]);
+        }
+
+        $this->assertCount(1, (new NPlusOneDetector(['thresholds' => []], $catalog))->detect($this->trace()));
+    }
+
+    public function test_without_catalog_data_only_id_and_uuid_count_as_a_primary_key(): void
+    {
+        for ($i = 1; $i <= 6; $i++) {
+            $this->q('update `items` set `x` = ? where `state` in (?, ?) and `item_id` = ?', [1, 'a', 'b', $i]);
+        }
+
+        $this->assertSame([], $this->det()->detect($this->trace()));
+    }
+
+    public function test_a_composite_primary_key_needs_every_column_pinned(): void
+    {
+        $catalog = $this->catalog(['order_lines' => [['name' => 'PRIMARY', 'columns' => ['order_id', 'line_no'], 'unique' => true]]]);
+        $detector = new NPlusOneDetector(['thresholds' => []], $catalog);
+
+        for ($i = 1; $i <= 6; $i++) {
+            $this->q('update `order_lines` set `x` = ? where `order_id` = ? and `status` in (?, ?)', [1, $i, 'a', 'b'], 1.0, 'app/Whole.php', 5);
+        }
+        $this->assertSame([], $detector->detect($this->trace()));
+
+        $this->setUp();
+        for ($i = 1; $i <= 6; $i++) {
+            $this->q('update `order_lines` set `x` = ? where `order_id` = ? and `line_no` = ? and `status` in (?, ?)', [1, 7, $i, 'a', 'b'], 1.0, 'app/Line.php', 6);
+        }
+        $this->assertCount(1, $detector->detect($this->trace()));
     }
 
     public function test_paging_call_site_is_not_flagged(): void

@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Lantern\Detection\Detectors;
 
 use Lantern\Detection\Detector;
+use Lantern\Detection\Explain\Catalog;
+use Lantern\Detection\Explain\DatabaseCatalog;
 use Lantern\Detection\Issue;
 use Lantern\Detection\QueryFilter;
 use Lantern\Trace\Trace;
@@ -14,7 +16,7 @@ final class NPlusOneDetector implements Detector
     private const MAX_ISSUES = 20;
 
     /** @param array<string, mixed> $config */
-    public function __construct(private readonly array $config = []) {}
+    public function __construct(private readonly array $config = [], private readonly ?Catalog $catalog = null) {}
 
     public function detect(Trace $trace): array
     {
@@ -36,7 +38,7 @@ final class NPlusOneDetector implements Detector
                 continue;
             }
 
-            if ($this->isBulkWrite((string) ($span->meta['sql'] ?? $span->meta['normalized_sql'] ?? ''))) {
+            if ($this->isBulkWrite((string) ($span->meta['sql'] ?? $span->meta['normalized_sql'] ?? ''), is_string($span->meta['connection'] ?? null) ? $span->meta['connection'] : null)) {
                 continue;
             }
 
@@ -89,7 +91,7 @@ final class NPlusOneDetector implements Detector
     }
 
     /** An UPDATE/DELETE over an IN list, subquery, BETWEEN or id range, or a multi-row INSERT, is deliberate batching. */
-    private function isBulkWrite(string $sql): bool
+    private function isBulkWrite(string $sql, ?string $connection = null): bool
     {
         $s = strtolower(trim((string) preg_replace('/\s+/', ' ', str_replace(['`', '"'], '', $sql))));
 
@@ -103,14 +105,50 @@ final class NPlusOneDetector implements Detector
 
         $where = substr($s, $pos);
 
-        // a row pinned by its own id is one row per statement, whatever else the WHERE filters on
-        if (preg_match('/\b(?:\w+\.)?(?:id|uuid)\s*=\s*(?:\?|\d|\x27)/', $where) === 1) {
+        $bulk = preg_match('/\bin\s*\(\s*(select\b|[^)]*,)/', $where) === 1
+            || preg_match('/\bbetween\b/', $where) === 1
+            || preg_match('/\b(?:\w+\.)?id\s*(?:>=|<=|>|<)\s*[?\d]/', $where) === 1;
+
+        return $bulk && ! $this->pinsOneRow($s, $where, $connection);
+    }
+
+    /**
+     * True when the WHERE has an equality on every column of the table's primary or another unique key, so the
+     * statement touches one row whatever else it filters on. Without catalog data it falls back to `id` and `uuid`.
+     */
+    private function pinsOneRow(string $sql, string $where, ?string $connection): bool
+    {
+        if (str_contains($where, ' or ')) {
             return false;
         }
 
-        return preg_match('/\bin\s*\(\s*(select\b|[^)]*,)/', $where) === 1
-            || preg_match('/\bbetween\b/', $where) === 1
-            || preg_match('/\b(?:\w+\.)?id\s*(?:>=|<=|>|<)\s*[?\d]/', $where) === 1;
+        preg_match_all('/(?<![\w.])(?:\w+\.)?(\w+)\s*=\s*(?:\?|\d|\x27|:\w|\$\d)/', $where, $m);
+        $pinned = array_flip(array_map('strtolower', $m[1]));
+        if ($pinned === []) {
+            return false;
+        }
+
+        $table = preg_match('/^(?:update(?: low_priority)?(?: ignore)? |delete from )(?:\w+\.)?(\w+)/', $sql, $t) === 1 ? $t[1] : null;
+        $indexes = [];
+        if ($table !== null) {
+            try {
+                $indexes = ($this->catalog ?? new DatabaseCatalog)->indexes($connection, $table);
+            } catch (\Throwable) {
+            }
+        }
+
+        if ($indexes === []) {
+            return isset($pinned['id']) || isset($pinned['uuid']);
+        }
+
+        foreach ($indexes as $index) {
+            $columns = array_map('strtolower', $index['columns']);
+            if (($index['unique'] ?? false) && $columns !== [] && array_diff($columns, array_keys($pinned)) === []) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private function short(string $sql): string
