@@ -32,6 +32,7 @@ final class LanternIssues extends LanternTool
             'all_apps' => $schema->boolean()->description('Include issues of every app'),
             'include_resolved' => $schema->boolean()->description('Also list resolved issues (hidden by default: the query ran again without the finding)'),
             'resolved' => $schema->boolean()->description('Only list resolved issues'),
+            'sql' => $schema->string()->description('Only issues recorded on queries with this shape (a SQL statement as seen in production; %s, ?, $1 and :name placeholders all work)'),
             'limit' => $schema->integer()->description('Max issues returned, 1-50 (default 10)')->min(1)->max(50),
             'offset' => $schema->integer()->description('Skip this many issues (use next_offset from a truncated result)')->min(0),
             'full' => $schema->boolean()->description('Return every field including evidence'),
@@ -57,6 +58,7 @@ final class LanternIssues extends LanternTool
             'all_apps' => 'nullable|boolean',
             'include_resolved' => 'nullable|boolean',
             'resolved' => 'nullable|boolean',
+            'sql' => 'nullable|string',
             'limit' => 'nullable|integer|min:1|max:50',
             'offset' => 'nullable|integer|min:0',
             'full' => 'nullable|boolean',
@@ -65,6 +67,6 @@ final class LanternIssues extends LanternTool
 
     protected function parameters(array $input): array
     {
-        return $this->options($input, ['type' => 'type', 'severity' => 'severity', 'sort' => 'sort', 'since' => 'since', 'path' => 'path', 'route' => 'route', 'status' => 'status', 'app' => 'app', 'all_apps' => 'all-apps', 'include_resolved' => 'include-resolved', 'resolved' => 'resolved', 'limit' => 'limit', 'offset' => 'offset', 'full' => 'full']);
+        return $this->options($input, ['type' => 'type', 'severity' => 'severity', 'sort' => 'sort', 'since' => 'since', 'path' => 'path', 'route' => 'route', 'status' => 'status', 'app' => 'app', 'all_apps' => 'all-apps', 'include_resolved' => 'include-resolved', 'resolved' => 'resolved', 'sql' => 'sql', 'limit' => 'limit', 'offset' => 'offset', 'full' => 'full']);
     }
 }

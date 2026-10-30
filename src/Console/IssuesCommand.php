@@ -9,6 +9,8 @@ use Lantern\Agent\AgentException;
 use Lantern\Agent\Findings;
 use Lantern\Agent\Output;
 use Lantern\Agent\Reader;
+use Lantern\Agent\SqlMatcher;
+use Lantern\Query\SqlInput;
 
 final class IssuesCommand extends AgentCommand
 {
@@ -24,6 +26,7 @@ final class IssuesCommand extends AgentCommand
         {--all-apps : Include issues of every app}
         {--include-resolved : Also list issues that later runs showed are gone (hidden by default)}
         {--resolved : Only list resolved issues}
+        {--sql= : Only issues recorded on queries with this shape (a SQL statement; %s, ?, $1 and :name placeholders all work)}
         {--limit=10 : Max issues returned}
         {--offset=0 : Skip this many issues}
         {--fields= : Comma-separated fields to return}
@@ -64,10 +67,17 @@ final class IssuesCommand extends AgentCommand
             'resolved' => $this->option('resolved') ? 'only' : ($this->option('include-resolved') ? 'include' : null),
         ], fn ($v) => $v !== null && $v !== '');
         $scope = $this->scope();
+        $since = Reader::since($this->option('since'));
+        $sql = trim((string) $this->option('sql'));
+        if ($sql !== '') {
+            if (! SqlInput::looksLikeSql($sql)) {
+                throw AgentException::usage('--sql does not look like a SQL statement.', 'It should start with select, insert, update, delete or with.');
+            }
+            $filters['keys'] = (new SqlMatcher($reader))->issueKeys($sql, $scope + ($since !== null ? ['since' => $since] : []), 200);
+        }
         $narrowed = array_diff_key($scope, ['app' => 1]) !== [] || $this->option('since');
         $listsAll = array_diff_key($filters, ['sort' => 1, 'resolved' => 1]) === [];
 
-        $since = Reader::since($this->option('since'));
         [$findings, $total, $exact] = $reader->issuesPage($filters + $scope, $limit, $offset, $since);
 
         if (in_array('evidence', $fields, true)) {
@@ -110,6 +120,8 @@ final class IssuesCommand extends AgentCommand
                     => 'No issues stored for app "'.$scope['app'].'". Pass --all-apps to include other apps, or run the app with LANTERN_ENABLED=true and LANTERN_STORAGE_DRIVER=database, hit the route, then retry.',
                 $listsAll && ! $narrowed
                     => 'No issues stored. Run the app with LANTERN_ENABLED=true and LANTERN_STORAGE_DRIVER=database, hit the route, then retry.',
+                $sql !== ''
+                    => 'No issue is recorded on a query with this shape. Run lantern:match with the same SQL to see where it runs, or widen with --all-apps or a longer --since.',
                 default => 'No issues match these filters; drop --type, --severity, --since, --path, --route or --status.',
             };
         }

@@ -55,9 +55,9 @@ abstract class LanternTool extends Tool
      */
     private static function asToolHints(array $payload): array
     {
-        $tools = ['issues' => 'lantern_issues', 'issue' => 'lantern_issue', 'trace' => 'lantern_trace_summary', 'diff' => 'lantern_diff', 'check' => 'lantern_check'];
+        $tools = ['issues' => 'lantern_issues', 'issue' => 'lantern_issue', 'trace' => 'lantern_trace_summary', 'diff' => 'lantern_diff', 'check' => 'lantern_check', 'match' => 'lantern_match'];
         $rewrite = fn (string $text): string => (string) preg_replace_callback(
-            '/php artisan lantern:(issues|issue|trace|diff|check)((?: [^\s.,]+)*)(?=$|\.(?:\s|$)|,)/',
+            '/php artisan lantern:(issues|issue|trace|diff|check|match)((?: [^\s.,]+)*)(?=$|\.(?:\s|$)|,)/',
             function (array $m) use ($tools): string {
                 $args = array_values(array_filter(preg_split('/\s+/', trim($m[2])) ?: [], fn (string $a): bool => $a !== '' && ! str_starts_with($a, '--')));
                 $with = match ($m[1]) {

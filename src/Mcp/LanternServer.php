@@ -12,6 +12,7 @@ use Lantern\Mcp\Tools\LanternCheck;
 use Lantern\Mcp\Tools\LanternDiff;
 use Lantern\Mcp\Tools\LanternIssue;
 use Lantern\Mcp\Tools\LanternIssues;
+use Lantern\Mcp\Tools\LanternMatch;
 use Lantern\Mcp\Tools\LanternTraceSummary;
 
 #[Name('lantern')]
@@ -25,5 +26,6 @@ final class LanternServer extends Server
         LanternTraceSummary::class,
         LanternDiff::class,
         LanternCheck::class,
+        LanternMatch::class,
     ];
 }

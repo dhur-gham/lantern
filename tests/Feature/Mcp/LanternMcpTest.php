@@ -12,12 +12,13 @@ use Lantern\Mcp\Tools\LanternCheck;
 use Lantern\Mcp\Tools\LanternDiff;
 use Lantern\Mcp\Tools\LanternIssue;
 use Lantern\Mcp\Tools\LanternIssues;
+use Lantern\Mcp\Tools\LanternMatch;
 use Lantern\Mcp\Tools\LanternTraceSummary;
 use Lantern\Tests\Feature\Agent\AgentTestCase;
 
 final class LanternMcpTest extends AgentTestCase
 {
-    private const TOOLS = [LanternIssues::class, LanternIssue::class, LanternTraceSummary::class, LanternDiff::class, LanternCheck::class];
+    private const TOOLS = [LanternIssues::class, LanternIssue::class, LanternTraceSummary::class, LanternDiff::class, LanternCheck::class, LanternMatch::class];
 
     protected function getPackageProviders($app): array
     {
@@ -63,7 +64,7 @@ final class LanternMcpTest extends AgentTestCase
         LanternServer::tools()->assertRegistered(self::TOOLS);
 
         $tools = array_map(fn (string $c): array => (new $c)->toArray(), self::TOOLS);
-        $this->assertSame(['lantern_issues', 'lantern_issue', 'lantern_trace_summary', 'lantern_diff', 'lantern_check'], array_column($tools, 'name'));
+        $this->assertSame(['lantern_issues', 'lantern_issue', 'lantern_trace_summary', 'lantern_diff', 'lantern_check', 'lantern_match'], array_column($tools, 'name'));
         foreach ($tools as $t) {
             $this->assertTrue($t['annotations']['readOnlyHint'], $t['name']);
             $this->assertSame('object', $t['inputSchema']['type']);
@@ -73,13 +74,14 @@ final class LanternMcpTest extends AgentTestCase
     public function test_input_schemas(): void
     {
         $issues = (new LanternIssues)->toArray()['inputSchema'];
-        $this->assertSame(['type', 'severity', 'sort', 'since', 'path', 'route', 'status', 'app', 'all_apps', 'include_resolved', 'resolved', 'limit', 'offset', 'full'], array_keys((array) $issues['properties']));
+        $this->assertSame(['type', 'severity', 'sort', 'since', 'path', 'route', 'status', 'app', 'all_apps', 'include_resolved', 'resolved', 'sql', 'limit', 'offset', 'full'], array_keys((array) $issues['properties']));
         $this->assertSame(50, $issues['properties']['limit']['maximum']);
         $this->assertSame(['critical', 'warning', 'info'], $issues['properties']['severity']['enum']);
 
         $this->assertSame(['id'], (new LanternIssue)->toArray()['inputSchema']['required']);
         $this->assertSame(['before', 'after'], (new LanternDiff)->toArray()['inputSchema']['required']);
         $this->assertArrayNotHasKey('required', (new LanternCheck)->toArray()['inputSchema']);
+        $this->assertSame(['sql'], (new LanternMatch)->toArray()['inputSchema']['required']);
     }
 
     public function test_issues_equals_cli_json(): void

@@ -114,6 +114,23 @@ Exit 0 on success, 2 for a bad `--in-sizes`, an unknown issue, a query with no `
 php artisan lantern:probe 3f9c2a41b7d0 --in-sizes=1,7,20,41,100
 ```
 
+## lantern:match
+
+Find the code behind a SQL statement seen outside the app, such as an APM span description or a database log line. The statement is normalised with the same rules Lantern uses for its own query spans, after rewriting `%s`, `%d`, `%(name)s` and `:name` placeholders to `?` (`?` and `$1` already work). Literals, case, whitespace, quoting, comments and hints, IN lists of any length and trailing `LIMIT`/`OFFSET` values do not affect the match. Lantern then searches the stored query spans of the most recent traces and groups what it finds by call site, with the issues recorded on those spans.
+
+Flags: `--sql="select ..."` (when omitted and input is piped, the SQL is read from stdin), `--traces=200` (recent traces searched, 1 to 500), `--since=`, `--path=`, `--route=`, `--status=`, `--app=`, `--all-apps` (the same scope as `lantern:issues`), `--include-resolved`, `--limit=5` (1 to 50), `--format=json` (default), `--pretty`.
+
+Schema `lantern.match`: `shape` (the redacted normalised SQL), `fingerprint`, `match_type` (`exact|similar`, of the best match), `traces_scanned`, `total_matches`, `returned`, `truncated`, `matches[]`, `hidden_resolved` (only when resolved issues were left out), `next`, `hint`. Each match has `match_type`, `sql_shape`, `call_site {file, line, function?}`, `occurrences`, `total_ms`, `max_ms`, `avg_ms`, `last_trace_id`, `trace_ids[]` (up to 5), `score` (`similar` only: word overlap from 0 to 1, at least 0.6) and, when an issue was recorded on the query, `issue {id, type, severity, status, title, suggestion}`, `issue_ids[]` and `plan {tables, rows_read, projected, schema_note, ...}` where known. `similar` matches are other stored queries that share most of their tables and columns (for example the production statement adds a condition). Literals from the input are never printed.
+
+Exit 0 on a match, 2 for no SQL, SQL that does not start with `select`, `insert`, `update`, `delete`, `with` and similar, or an unknown option, 3 when nothing matches (the hint says how to widen the search).
+
+```
+php artisan lantern:match --sql="select * from users where email = %s and id in (%s, %s)"
+echo "select * from users where id = $1" | php artisan lantern:match
+```
+
+`lantern:issues --sql="..."` lists only the issues recorded on queries with exactly this shape.
+
 ## lantern:schema-snapshot
 
 Capture the index layout of a database as JSON, to compare elsewhere. A local database often lacks indexes production has, so local EXPLAIN plans and timings can describe a plan production never uses. These two commands read the application's database, not Lantern storage, so they work with any `LANTERN_STORAGE_DRIVER`. Supported drivers: MySQL, MariaDB, PostgreSQL, SQLite.

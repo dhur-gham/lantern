@@ -6,6 +6,12 @@ Lantern loads its migrations from the package, so `php artisan migrate` is enoug
 
 If your team applies schema changes by hand, print the SQL instead of migrating (see [Applying the schema by hand](#applying-the-schema-by-hand)).
 
+## 0.5.0
+
+**No schema change.** Nothing to migrate.
+
+**New: `lantern:match`.** Paste a SQL statement from production (an APM span description or a log line) and get the call site, the issue recorded on that query and its plan. Placeholders `%s`, `%d`, `%(name)s`, `?`, `$1` and `:name`, literal values, case, whitespace, quoting, comments, IN lists of any length and trailing `LIMIT`/`OFFSET` values all match. See the [CLI reference](CLI.md#lanternmatch). `lantern:issues` takes the same statement as `--sql=`. MCP: new tool `lantern_match` and a `sql` input on `lantern_issues`. Existing query fingerprints and stored issues are unchanged. The command searches the traces already stored, so a query that has not run since Lantern was enabled is reported as no match (exit 3).
+
 ## 0.4.2
 
 **Schema.** One new migration, `2024_01_01_000006_add_resolved_state_to_lantern_issues_table`, adds two nullable, indexed columns to `lantern_issues`: `resolved_at` and `shape`, and fills `shape` for existing `missing_index`, `index_not_chosen` and `plan_flip` rows so they can resolve without waiting to fire again. Run `php artisan migrate`, or print the SQL with `php artisan lantern:install --sql --since=0.4.2`. Until it has run, Lantern keeps storing traces and issues as before, issues are always shown as open, and `--resolved` lists nothing.

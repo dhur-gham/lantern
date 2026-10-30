@@ -287,6 +287,7 @@ php artisan lantern:trace --last --summary           # totals, issues, slowest q
 php artisan lantern:trace --slow --summary           # the slowest of the 100 most recent traces (ignores --last)
 php artisan lantern:trace --path='api/otp/*' --summary   # latest trace matching a path (also --route, --status, --since)
 php artisan lantern:issues --path='api/otp/*' --status=5xx   # issues whose latest trace matches
+php artisan lantern:match --sql="select ... where id = %s"   # code, issues and plan behind a production SQL
 php artisan lantern:diff <before> last               # resolved and new issues, query deltas
 php artisan lantern:check --route=/posts             # pass/fail gate
 php artisan lantern:status                           # state and detected framework versions
