@@ -189,19 +189,42 @@ final class ExplainRunner implements AnalyzeSource, PlanSource
         $rows = $statement->fetchAll(\PDO::FETCH_ASSOC);
         $statement->closeCursor();
 
-        $top = strtok((string) (array_values($rows[0] ?? [])[0] ?? ''), "\n");
+        [$count, $this->failure] = self::readAnalyzedTree((string) (array_values($rows[0] ?? [])[0] ?? ''), $timeoutMs);
+
+        return $count;
+    }
+
+    /**
+     * Rows returned according to a MySQL EXPLAIN ANALYZE tree, or why it cannot be told: `timeout` for a run the time
+     * limit interrupted, `parse_failed` for an answer in a shape this does not know.
+     *
+     * An interrupted run ends quietly, with a warning native prepared statements cannot show. Its top nodes read
+     * "(never executed)" while the nodes below carry the time spent, and when the top node did finish, its own end
+     * time reaching the limit is the tell; the row counts of either are partial.
+     *
+     * @return array{0: ?int, 1: ?string}
+     */
+    public static function readAnalyzedTree(string $plan, int $timeoutMs): array
+    {
+        $top = strtok($plan, "\n");
         if (! is_string($top) || preg_match('/\(actual time=[\d.e+-]+\.\.([\d.e+-]+) rows=([\d.e+-]+) loops=(\d+)\)/i', $top, $m) !== 1) {
-            return null;
+            return [null, (is_string($top) && str_contains($top, 'never executed')) || self::spentAtLeast($plan, $timeoutMs * 0.9) ? 'timeout' : 'parse_failed'];
         }
-        // an interrupted run ends quietly, with a warning native prepared statements cannot show: the top node's
-        // own end time reaching the limit is the tell, and its row counts are partial
         if ((float) $m[1] >= $timeoutMs * 0.9) {
-            $this->failure = 'timeout';
-
-            return null;
+            return [null, 'timeout'];
         }
 
-        return (int) round((float) $m[2] * (int) $m[3]);
+        return [(int) round((float) $m[2] * (int) $m[3]), null];
+    }
+
+    /** Whether any node of an EXPLAIN ANALYZE tree reports an end time of at least $ms. */
+    private static function spentAtLeast(string $plan, float $ms): bool
+    {
+        if (preg_match_all('/\(actual time=[\d.e+-]+\.\.([\d.e+-]+) /i', $plan, $all) < 1) {
+            return false;
+        }
+
+        return max(array_map('floatval', $all[1])) >= $ms;
     }
 
     /**

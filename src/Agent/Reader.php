@@ -144,7 +144,7 @@ final class Reader
             if (isset($meta['rows_returned']) && is_numeric($meta['rows_returned']) && (int) $meta['rows_returned'] > 0) {
                 $out['rows_returned'] = (int) $meta['rows_returned'];
                 $out['read_ratio'] = round($out['rows_read'] / $out['rows_returned'], 1);
-            } elseif (is_string($meta['rows_returned_why'] ?? null) && in_array($meta['rows_returned_why'], ['unsupported', 'budget', 'no_bindings', 'timeout', 'failed'], true)) {
+            } elseif (is_string($meta['rows_returned_why'] ?? null) && in_array($meta['rows_returned_why'], ['unsupported', 'budget', 'no_bindings', 'timeout', 'parse_failed', 'failed'], true)) {
                 $out['rows_returned_why'] = $meta['rows_returned_why'];
             }
         }

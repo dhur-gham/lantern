@@ -565,7 +565,7 @@ final class MissingIndexDetector implements Detector
         }
         if ($meta['rows_returned'] === null) {
             $why = method_exists($analyzer, 'failure') ? $analyzer->failure() : null;
-            $meta['rows_returned_why'] = in_array($why, ['timeout', 'unsupported'], true) ? $why : 'failed';
+            $meta['rows_returned_why'] = in_array($why, ['timeout', 'unsupported', 'parse_failed'], true) ? $why : 'failed';
         }
 
         return $meta;

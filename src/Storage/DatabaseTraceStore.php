@@ -289,7 +289,6 @@ final class DatabaseTraceStore implements TraceStore
             $keep = 'case when '.$cur('in_size').' is not null and ('.$new('in_size').' is null or '.$new('in_size').' < '.$cur('in_size').') then ';
             $update['sql_hash'] = new Expression($keep.$cur('sql_hash').' else '.$new('sql_hash').' end');
             $update['in_size'] = new Expression($keep.$cur('in_size').' else '.$new('in_size').' end');
-            $update['sql_hash'] = new Expression($new('sql_hash'));
             $update['resolved_at'] = new Expression('NULL');
         }
 
