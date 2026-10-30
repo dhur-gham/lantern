@@ -9,6 +9,7 @@ use Lantern\Console\DiffCommand;
 use Lantern\Console\IssueCommand;
 use Lantern\Console\IssuesCommand;
 use Lantern\Console\MatchCommand;
+use Lantern\Console\LoginCommand;
 use Lantern\Console\ProbeCommand;
 use Lantern\Console\RunCommand;
 use Lantern\Console\SchemaDiffCommand;
@@ -20,6 +21,6 @@ final class Commands
     /** @return list<class-string> */
     public static function all(): array
     {
-        return [IssuesCommand::class, IssueCommand::class, TraceCommand::class, DiffCommand::class, CheckCommand::class, MatchCommand::class, ProbeCommand::class, SchemaSnapshotCommand::class, SchemaDiffCommand::class, RunCommand::class];
+        return [IssuesCommand::class, IssueCommand::class, TraceCommand::class, DiffCommand::class, CheckCommand::class, MatchCommand::class, ProbeCommand::class, SchemaSnapshotCommand::class, SchemaDiffCommand::class, RunCommand::class, LoginCommand::class];
     }
 }

@@ -26,7 +26,7 @@ use Lantern\Trace\Recorder;
 
 class LanternServiceProvider extends ServiceProvider
 {
-    public const VERSION = '0.6.0';
+    public const VERSION = '0.7.0';
 
     /** Detectors added after 0.3: merged into a published `detectors` list that predates them. */
     public const ADDED_DETECTORS = [\Lantern\Detection\Detectors\PlanFlipDetector::class];
@@ -41,6 +41,9 @@ class LanternServiceProvider extends ServiceProvider
         $this->app->singleton(TraceQueries::class, fn ($app) => new TraceQueries($app['db'], $app['config']->get('lantern.storage.connection')));
 
         $this->app->singleton(Recording::class, fn ($app) => new Recording($app));
+        $this->mergeAccessFile();
+        $this->app->singleton(\Lantern\Access\AccessTokens::class, fn ($app) => new \Lantern\Access\AccessTokens($app['cache']->store($app['config']->get('lantern.access.cache_store'))));
+        $this->app->singleton(\Lantern\Access\Access::class, fn ($app) => new \Lantern\Access\Access($app, $app->make(\Lantern\Access\AccessTokens::class)));
 
         if (! $this->tracingEnabled()) {
             return;
@@ -155,7 +158,7 @@ class LanternServiceProvider extends ServiceProvider
             ], 'lantern-migrations');
 
             $this->commands(array_values(array_filter([
-                InstallCommand::class, StatusCommand::class, TraceDumpCommand::class, PruneCommand::class,
+                InstallCommand::class, \Lantern\Console\InitCommand::class, StatusCommand::class, TraceDumpCommand::class, PruneCommand::class,
                 ...\Lantern\Agent\Commands::all(),
             ], 'class_exists')));
         }
@@ -250,7 +253,7 @@ class LanternServiceProvider extends ServiceProvider
         $config = $this->app['config'];
         $path = trim((string) $config->get('lantern.path', 'lantern'), '/');
         $ignored = (array) $config->get('lantern.ignore_paths', []);
-        foreach ([$path, $path.'/*'] as $pattern) {
+        foreach ([$path, $path.'/*', '_lantern', '_lantern/*'] as $pattern) {
             if (! in_array($pattern, $ignored, true)) {
                 $ignored[] = $pattern;
             }
@@ -258,10 +261,30 @@ class LanternServiceProvider extends ServiceProvider
         $config->set('lantern.ignore_paths', $ignored);
     }
 
+    /** Surfaces written by lantern:init --write live in config/lantern-access.php; the main config wins on a clash. */
+    private function mergeAccessFile(): void
+    {
+        $file = $this->app->configPath('lantern-access.php');
+        if (! is_file($file)) {
+            return;
+        }
+        $surfaces = require $file;
+        if (is_array($surfaces)) {
+            $config = $this->app['config'];
+            $config->set('lantern.access.surfaces', array_merge($surfaces, (array) $config->get('lantern.access.surfaces', [])));
+        }
+    }
+
     private function registerRoutes(): void
     {
         if (! $this->tracingEnabled() || $this->app->routesAreCached()) {
             return;
+        }
+
+        if (\Lantern\Access\Access::available($this->app)) {
+            \Illuminate\Support\Facades\Route::middleware(['web', 'throttle:30,1'])
+                ->get(\Lantern\Access\Access::PATH.'/{token}', \Lantern\Access\AccessController::class)
+                ->name('lantern.access');
         }
 
         $config = $this->app['config'];

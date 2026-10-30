@@ -152,7 +152,7 @@ final class LifecycleInstrumentation
         $startNs ??= hrtime(true);
 
         $path = '/'.ltrim($request->path(), '/');
-        $trace = $recorder->begin(['kind' => 'request', 'method' => $request->method(), 'path' => $path], $startNs);
+        $trace = $recorder->begin(['kind' => 'request', 'method' => $request->method(), 'path' => $path, 'host' => $request->getHttpHost()], $startNs);
         $trace->root()->name = $request->method().' '.$path;
         $this->handled = false;
 

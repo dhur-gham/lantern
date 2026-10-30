@@ -60,4 +60,39 @@ Published to `config/lantern.php` by `php artisan lantern:install`. Source of tr
 | `retention.days` | `7` | `LANTERN_RETENTION_DAYS` | Trace retention for `lantern:prune`. |
 | `retention.issues_days` | `30` | `LANTERN_ISSUES_RETENTION_DAYS` | Issue retention for `lantern:prune`. |
 
+## Access
+
+Local-only sign-in used by `lantern:login` and `Lantern::actingAs()` (see [CLI](CLI.md#lanternlogin-surface)). Everything here requires `APP_ENV=local` and Lantern enabled; elsewhere the route is not registered.
+
+| Key | Default | Env | Meaning |
+|---|---|---|---|
+| `access.enabled` | `true` | `LANTERN_ACCESS` | Turns the sign-in route and the commands off when false. |
+| `access.cache_store` | `null` | `LANTERN_ACCESS_CACHE_STORE` | Cache store holding one-time links and the list of what was issued. `null` is the default store. Not `array` (`lantern:status` warns). One-time links rely on the store reading and deleting the token in one step, which Redis does not do atomically; in theory a link can be used twice at the same instant. |
+| `access.fire_login_event` | `false` | none | Fire Laravel's `Login` event when a link signs a user in. Off by default: listeners may send mail or write audit rows. |
+| `access.surfaces` | `[]` | none | Named ways into the app, below. |
+
+Surface keys (name them as you like, for example `panel` and `api`):
+
+- `type`: `session` (default), `sanctum` or `custom`.
+- `guard`: auth guard. Defaults to the default guard (`web` for `sanctum`).
+- `user`: default user as an id, an email, or credentials like `['email' => 'dev@example.test']`. `--user=` overrides it.
+- `session` (session): values put in the session after sign-in, for example an active tenant.
+- `home` (session): path opened when `--to` is not given. Default `/`.
+- `abilities` (sanctum): token abilities. Default `['*']`.
+- `ttl_minutes` (sanctum): token lifetime. Default `30`.
+- `headers` (sanctum): extra headers printed with the token.
+- `credentials` (custom): class implementing `Lantern\Access\ProvidesCredentials`; optionally also `Lantern\Access\ProvidesUser` for `Lantern::actingAs()`.
+- `subject` (custom): array passed to the class, for example `['merchant' => 222]`.
+
+```php
+'access' => [
+    'surfaces' => [
+        'panel' => ['type' => 'session', 'guard' => 'web', 'user' => 'dev@example.test', 'home' => '/admin'],
+        'api' => ['type' => 'sanctum', 'user' => 'dev@example.test', 'abilities' => ['items:read']],
+    ],
+],
+```
+
+`config/lantern-access.php` (written by `php artisan lantern:init --write`) returns the same `surfaces` array on its own. It is merged into `lantern.access.surfaces`; a surface of the same name in `config/lantern.php` wins. It is easy to keep out of git.
+
 The dashboard gate is code, not config: `Lantern::auth(fn ($request) => ...)`. Without a gate, only `APP_ENV=local` requests from a loopback peer (127.0.0.1, ::1) are allowed; every other environment or client gets 403. Behind Docker or a remote dev host, set `Lantern::auth`.

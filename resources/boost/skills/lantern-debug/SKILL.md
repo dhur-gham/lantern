@@ -16,6 +16,8 @@ description: Debug slow Laravel requests and query problems (N+1, lazy loading, 
 
 6b. To reproduce outside an HTTP request, write a probe script that builds production-shaped data (reproduce the production condition, such as a field empty locally but set in production, or the probe hides the bug) and wraps the code in `Lantern\Facades\Lantern::record('name', fn () => ..., ['id' => 1])`. `php artisan lantern:run probes/x.php --repeat=5 --diff=name` runs it with Lantern on (local only, database writes rolled back unless `--commit`, extra `--key=value` options in `$args`) and prints the traces, a median `summary` and the diff as JSON. Find the issues with `lantern:issues --route='record:*' --format=json`, fix, re-run the same probe. Not available over MCP.
 
+6c. For a problem that needs a logged-in browser or API, run `php artisan lantern:login <surface> --format=json` (local only; `--to=/path` for session surfaces; `--list` shows surfaces, `php artisan lantern:init` proposes them). Open the printed `url` once in the browser, or send the printed `headers` with each API request; then read the traces with `lantern:issues --path=...`. Revoke afterwards with `php artisan lantern:login --revoke --all`. In-process code can use `Lantern::actingAs('panel')`. Not available over MCP.
+
 Always pass `--format=json` (the default table is large). Each result has `next`, the suggested follow-up command; `hint` explains empty or truncated results. With the `lantern` MCP server (`php artisan mcp:start lantern`) call `lantern_issues`, `lantern_issue`, `lantern_trace_summary`, `lantern_diff`, `lantern_check` instead; same JSON, same steps.
 
 Never silence an issue to pass the check. Gate on query count and issue presence, not milliseconds (timing is noisy).
