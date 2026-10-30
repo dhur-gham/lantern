@@ -336,7 +336,8 @@ final class IndexAnalysisMatrixTest extends MatrixTestCase
         $this->seedShop();
         $started = microtime(true);
 
-        $rows = (new ExplainRunner)->rowsReturned(
+        $runner = new ExplainRunner;
+        $rows = $runner->rowsReturned(
             self::driver(),
             'select count(*) from mx_orders a cross join mx_orders b cross join mx_orders c where a.order_id <> b.order_id',
             [],
@@ -344,6 +345,7 @@ final class IndexAnalysisMatrixTest extends MatrixTestCase
         );
 
         $this->assertNull($rows);
+        $this->assertSame('timeout', $runner->failure());
         $this->assertLessThan(5.0, microtime(true) - $started);
         $this->assertFalse(DB::connection()->getReadPdo()->inTransaction());
         $this->assertSame(6000, (int) DB::table('mx_orders')->count());

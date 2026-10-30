@@ -24,6 +24,8 @@ use Throwable;
  */
 final class ExplainRunner implements AnalyzeSource, PlanSource
 {
+    private ?string $failure = null;
+
     public function __construct(private readonly ?DatabaseManager $db = null)
     {
     }
@@ -90,15 +92,26 @@ final class ExplainRunner implements AnalyzeSource, PlanSource
         ) !== 1;
     }
 
+    /** Why the last rowsReturned() gave null: timeout, not_replayable, unsupported or failed. */
+    public function failure(): ?string
+    {
+        return $this->failure;
+    }
+
     public function rowsReturned(?string $connectionName, string $sql, array $bindings = [], int $timeoutMs = 2000): ?int
     {
+        $this->failure = null;
         try {
             if (! self::isReplayable($sql)) {
+                $this->failure = 'not_replayable';
+
                 return null;
             }
 
             $connection = ($this->db ?? app('db'))->connection($connectionName);
             if (! $connection instanceof Connection) {
+                $this->failure = 'unsupported';
+
                 return null;
             }
 
@@ -106,16 +119,30 @@ final class ExplainRunner implements AnalyzeSource, PlanSource
             $params = $this->params($connection, $sql, $bindings);
             $pdo = $connection->getReadPdo();
 
-            return match ($connection->getDriverName()) {
+            $rows = match ($connection->getDriverName()) {
                 'pgsql' => $this->pgsqlReturned($pdo, $sql, $params, $timeoutMs),
                 'mysql', 'mariadb' => str_contains((string) $pdo->getAttribute(\PDO::ATTR_SERVER_VERSION), 'MariaDB')
                     ? $this->mariadbReturned($pdo, $sql, $params, $timeoutMs)
                     : $this->mysqlReturned($pdo, $sql, $params, $timeoutMs),
                 default => null,
             };
-        } catch (Throwable) {
+            if ($rows === null) {
+                $this->failure ??= in_array($connection->getDriverName(), ['pgsql', 'mysql', 'mariadb'], true) ? 'failed' : 'unsupported';
+            }
+
+            return $rows;
+        } catch (Throwable $e) {
+            $this->failure = self::timedOut($e) ? 'timeout' : 'failed';
+
             return null;
         }
+    }
+
+    /** The engines' own "query ran too long" errors: MySQL 3024, MariaDB 1969, PostgreSQL 57014. */
+    private static function timedOut(Throwable $e): bool
+    {
+        return preg_match('/maximum statement execution time|max_statement_time|statement timeout|canceling statement|query execution was interrupted/i', $e->getMessage()) === 1
+            || in_array((string) $e->getCode(), ['57014', '3024', '1969', 'HY000'], true) && stripos($e->getMessage(), 'time') !== false;
     }
 
     /**
@@ -169,6 +196,8 @@ final class ExplainRunner implements AnalyzeSource, PlanSource
         // an interrupted run ends quietly, with a warning native prepared statements cannot show: the top node's
         // own end time reaching the limit is the tell, and its row counts are partial
         if ((float) $m[1] >= $timeoutMs * 0.9) {
+            $this->failure = 'timeout';
+
             return null;
         }
 

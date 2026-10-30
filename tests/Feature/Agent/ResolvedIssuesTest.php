@@ -328,6 +328,29 @@ final class ResolvedIssuesTest extends AgentTestCase
         $this->assertNull($this->resolvedAt($issue->key));
     }
 
+    public function test_a_finding_that_fires_again_on_a_smaller_input_keeps_the_largest_baseline(): void
+    {
+        $issue = $this->slowIssue();
+        $this->persist($this->trace([['ms' => 300.0, 'in' => 41, 'sql' => $this->inSql(41)]]), [$issue]);
+        $this->persist($this->trace([['ms' => 150.0, 'in' => 7, 'sql' => $this->inSql(7)]]), [$issue]);
+        $this->assertSame(41, (int) DB::table('lantern_issues')->where('issue_key', $issue->key)->value('in_size'));
+
+        $this->persist($this->trace([['ms' => 20.0, 'in' => 7, 'sql' => $this->inSql(7)]]));
+        $this->assertNull($this->resolvedAt($issue->key), 'seven merchants running clean still proves nothing about forty-one');
+
+        $this->persist($this->trace([['ms' => 20.0, 'in' => 41, 'sql' => $this->inSql(41)]]));
+        $this->assertNotNull($this->resolvedAt($issue->key));
+    }
+
+    public function test_a_larger_input_raises_the_baseline(): void
+    {
+        $issue = $this->slowIssue();
+        $this->persist($this->trace([['ms' => 300.0, 'in' => 7, 'sql' => $this->inSql(7)]]), [$issue]);
+        $this->persist($this->trace([['ms' => 400.0, 'in' => 41, 'sql' => $this->inSql(41)]]), [$issue]);
+
+        $this->assertSame(41, (int) DB::table('lantern_issues')->where('issue_key', $issue->key)->value('in_size'));
+    }
+
     public function test_a_smaller_input_does_not_resolve_a_plan_finding(): void
     {
         $issue = $this->planIssue(Issue::TYPE_INDEX_NOT_CHOSEN);
