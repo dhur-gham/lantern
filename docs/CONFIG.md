@@ -67,7 +67,7 @@ Local-only sign-in used by `lantern:login` and `Lantern::actingAs()` (see [CLI](
 | Key | Default | Env | Meaning |
 |---|---|---|---|
 | `access.enabled` | `true` | `LANTERN_ACCESS` | Turns the sign-in route and the commands off when false. |
-| `access.cache_store` | `null` | `LANTERN_ACCESS_CACHE_STORE` | Cache store holding one-time links and the list of what was issued. `null` is the default store. Not `array` (`lantern:status` warns). |
+| `access.cache_store` | `null` | `LANTERN_ACCESS_CACHE_STORE` | Cache store holding one-time links and the list of what was issued. `null` is the default store. Not `array` (`lantern:status` warns). One-time links rely on the store reading and deleting the token in one step, which Redis does not do atomically; in theory a link can be used twice at the same instant. |
 | `access.fire_login_event` | `false` | none | Fire Laravel's `Login` event when a link signs a user in. Off by default: listeners may send mail or write audit rows. |
 | `access.surfaces` | `[]` | none | Named ways into the app, below. |
 

@@ -102,14 +102,15 @@ class StatusCommand extends Command
         return self::SUCCESS;
     }
 
-    /** @return array{available: bool, surfaces: int, cache_store: string|null, warnings: list<string>} */
+    /** @return array{available: bool, surfaces: int, cache_store: string|null, host_verified: bool|null, warnings: list<string>} */
     private function access(bool $enabled): array
     {
         $surfaces = count((array) config('lantern.access.surfaces', []));
         $store = null;
+        $hostVerified = null;
         $warnings = [];
         if ($surfaces === 0) {
-            return ['available' => $enabled && \Lantern\Access\Access::available($this->laravel), 'surfaces' => 0, 'cache_store' => null, 'warnings' => []];
+            return ['available' => $enabled && \Lantern\Access\Access::available($this->laravel), 'surfaces' => 0, 'cache_store' => null, 'host_verified' => null, 'warnings' => []];
         }
 
         try {
@@ -123,10 +124,15 @@ class StatusCommand extends Command
             $url = (string) config('app.url');
             if (parse_url($url, PHP_URL_HOST) === null) {
                 $warnings[] = 'APP_URL has no host ("'.$url.'"): lantern:login links would not open the right site. Set APP_URL to the address the browser uses.';
+            } else {
+                $hostVerified = $this->laravel->make(\Lantern\Access\HostCheck::class)->lastSeen() !== null;
+                if (! $hostVerified) {
+                    $warnings[] = \Lantern\Access\HostCheck::HINT;
+                }
             }
         }
 
-        return ['available' => $enabled && \Lantern\Access\Access::available($this->laravel), 'surfaces' => $surfaces, 'cache_store' => $store, 'warnings' => $warnings];
+        return ['available' => $enabled && \Lantern\Access\Access::available($this->laravel), 'surfaces' => $surfaces, 'cache_store' => $store, 'host_verified' => $hostVerified, 'warnings' => $warnings];
     }
 
     private function isLoopbackUrl(string $url): bool

@@ -6,6 +6,7 @@ namespace Lantern\Console;
 
 use Lantern\Access\Access;
 use Lantern\Access\AccessTokens;
+use Lantern\Access\HostCheck;
 use Lantern\Agent\AgentCommand;
 use Lantern\Agent\AgentException;
 use Lantern\Agent\Findings;
@@ -76,7 +77,7 @@ final class LoginCommand extends AgentCommand
     /** @return array<string, mixed> */
     private function session(Access $access, Reader $reader, string $name, ?string $user): array
     {
-        [$base, $warning] = $this->baseUrl($reader);
+        [$base, $verified] = $this->baseUrl();
         $link = $access->sessionLink($name, $user, $this->option('to') !== null && $this->option('to') !== '' ? (string) $this->option('to') : null, $base);
 
         return array_filter([
@@ -84,7 +85,8 @@ final class LoginCommand extends AgentCommand
             'expires_at' => $link['expires_at'],
             'user' => $link['user'],
             'use' => 'Open url once in the browser; the browser then holds a normal session cookie. The link works once.',
-            'warning' => $warning,
+            'host_verified' => $verified,
+            'hint' => $verified ? null : HostCheck::HINT,
             'next' => 'After reproducing: php artisan lantern:issues --since=10m --format=json',
         ], fn ($v) => $v !== null);
     }
@@ -167,9 +169,9 @@ final class LoginCommand extends AgentCommand
     /**
      * APP_URL as the base of the link, checked against the host the browser reached on the last request Lantern saw.
      *
-     * @return array{0: string, 1: string|null} base url, and a warning when no request has been seen to compare with
+     * @return array{0: string, 1: bool} base url, and whether its host matched the host of a recorded request
      */
-    private function baseUrl(Reader $reader): array
+    private function baseUrl(): array
     {
         $url = (string) config('app.url');
         $parts = parse_url($url);
@@ -178,7 +180,7 @@ final class LoginCommand extends AgentCommand
         }
 
         $expected = $parts['host'].(isset($parts['port']) ? ':'.$parts['port'] : '');
-        $seen = $this->lastHost($reader);
+        $seen = $this->laravel->make(HostCheck::class)->lastSeen();
         if ($seen !== null && strcasecmp($seen, $expected) !== 0 && strcasecmp(explode(':', $seen)[0], $parts['host']) !== 0) {
             throw AgentException::config(
                 'APP_URL host ('.$expected.') differs from the host of the last request Lantern saw ('.$seen.'). The session cookie would not be sent.',
@@ -186,28 +188,6 @@ final class LoginCommand extends AgentCommand
             );
         }
 
-        return [rtrim($url, '/'), $seen === null ? 'No request has been recorded yet, so APP_URL could not be checked against the host the browser uses.' : null];
-    }
-
-    private function lastHost(Reader $reader): ?string
-    {
-        try {
-            if (config('lantern.storage.driver', 'memory') !== 'database') {
-                return null;
-            }
-            foreach ($reader->traces([], 15) as $row) {
-                if (($row['method'] ?? null) === null) {
-                    continue;
-                }
-                $trace = $reader->traceRow((string) $row['id']);
-                $host = $trace['payload']['meta']['host'] ?? null;
-                if (is_string($host) && $host !== '') {
-                    return $host;
-                }
-            }
-        } catch (Throwable) {
-        }
-
-        return null;
+        return [rtrim($url, '/'), $seen !== null];
     }
 }

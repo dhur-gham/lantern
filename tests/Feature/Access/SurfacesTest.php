@@ -145,5 +145,7 @@ final class SurfacesTest extends AccessTestCase
         $this->assertSame(3, $data['access']['surfaces']);
         $this->assertSame('ArrayStore', $data['access']['cache_store']);
         $this->assertStringContainsString('array', $data['access']['warnings'][0]);
+        $this->assertFalse($data['access']['host_verified']);
+        $this->assertStringContainsString('could not be checked', $data['access']['warnings'][1]);
     }
 }

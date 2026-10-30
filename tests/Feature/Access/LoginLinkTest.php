@@ -135,13 +135,15 @@ final class LoginLinkTest extends AccessTestCase
     {
         [$code, $data] = $this->login(['surface' => 'panel']);
         $this->assertSame(0, $code);
-        $this->assertStringContainsString('No request has been recorded', $data['warning']);
+        $this->assertFalse($data['host_verified']);
+        $this->assertStringContainsString('could not be checked', $data['hint']);
 
         $this->storeRequestTrace('myapp.test');
 
         [$code, $data] = $this->login(['surface' => 'panel']);
         $this->assertSame(0, $code);
-        $this->assertArrayNotHasKey('warning', $data);
+        $this->assertTrue($data['host_verified']);
+        $this->assertArrayNotHasKey('hint', $data);
     }
 
     public function test_list_shows_surfaces_and_what_is_outstanding_and_revoke_clears_it(): void
