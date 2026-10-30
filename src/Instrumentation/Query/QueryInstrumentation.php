@@ -51,7 +51,7 @@ final class QueryInstrumentation
 
     private ?string $keptTrace = null;
 
-    /** @var array<string, true> shapes whose raw bindings are held in the current trace */
+    /** @var array<string, array{0: \WeakReference<\Lantern\Trace\Span>, 1: float}> shapes whose raw bindings are held in the current trace, with the span and its time */
     private array $kept = [];
 
     /** @var WeakMap<Connection, true> */
@@ -305,7 +305,7 @@ final class QueryInstrumentation
         $span = $recorder->recordClosed(SpanType::Query, mb_substr($normalized, 0, 80), $startNs, $endNs, $meta, $site);
 
         if ($extra['failed'] === false) {
-            $this->keepRawBindings($span, $recorder, $sql, $fingerprint, (array) $slot['bindings']);
+            $this->keepRawBindings($span, $recorder, $sql, $fingerprint, (array) $slot['bindings'], (float) ($extra['time_ms'] ?? 0));
         }
 
         if ($track) {
@@ -321,11 +321,13 @@ final class QueryInstrumentation
     /**
      * explain_analyze replays a query with its real values, but stored bindings are redacted or absent by default.
      * The raw values ride on the span in memory only (never in meta, so never persisted or emitted), for the first
-     * SELECT of each shape, bounded in count and size, and are dropped once the detectors have run.
+     * SELECT of each shape, bounded in count and size, and are dropped once the detectors have run. When the count
+     * is used up, a slow query takes the place of the fastest shape held, so a heavy request still keeps the
+     * bindings of its slowest queries.
      *
      * @param  array<int|string, mixed>  $bindings
      */
-    private function keepRawBindings(\Lantern\Trace\Span $span, Recorder $recorder, string $sql, string $fingerprint, array $bindings): void
+    private function keepRawBindings(\Lantern\Trace\Span $span, Recorder $recorder, string $sql, string $fingerprint, array $bindings, float $ms = 0.0): void
     {
         if (! $this->config('explain', false) || ! $this->config('explain_analyze', false) || ! ExplainRunner::isSelect($sql)) {
             return;
@@ -336,8 +338,20 @@ final class QueryInstrumentation
             $this->keptTrace = $traceId;
             $this->kept = [];
         }
-        if (isset($this->kept[$fingerprint]) || count($this->kept) >= self::MAX_KEPT_SHAPES) {
+        if (isset($this->kept[$fingerprint])) {
             return;
+        }
+        $evict = null;
+        if (count($this->kept) >= self::MAX_KEPT_SHAPES) {
+            $evict = array_key_first($this->kept);
+            foreach ($this->kept as $fp => [, $heldMs]) {
+                if ($heldMs < $this->kept[$evict][1]) {
+                    $evict = $fp;
+                }
+            }
+            if ($ms < (float) $this->config('thresholds.slow_query_ms', 100) || $ms <= $this->kept[$evict][1]) {
+                return;
+            }
         }
 
         $bytes = 0;
@@ -355,7 +369,11 @@ final class QueryInstrumentation
             }
         }
 
-        $this->kept[$fingerprint] = true;
+        if ($evict !== null) {
+            $this->kept[$evict][0]->get()?->releaseRawBindings();
+            unset($this->kept[$evict]);
+        }
+        $this->kept[$fingerprint] = [\WeakReference::create($span), $ms];
         $span->keepRawBindings($bindings);
     }
 

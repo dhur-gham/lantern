@@ -79,6 +79,9 @@ final class MissingIndexDetector implements Detector
                 $candidates[$fp] = [$max, $spans];
             }
         }
+        // The slowest shapes first: the per-trace EXPLAIN and replay budgets must reach the heaviest queries, not
+        // whichever ran first (a stable sort keeps the execution order between equally slow ones).
+        uasort($candidates, fn (array $a, array $b): int => $b[0] <=> $a[0]);
         $candidates = array_map(fn (array $c) => $c[1], $candidates);
 
         $runner = $this->runner ?? new ExplainRunner;
@@ -535,8 +538,11 @@ final class MissingIndexDetector implements Detector
             return $meta;
         }
         $analyzer = $this->analyzer ?? ($runner instanceof AnalyzeSource ? $runner : null);
-        if ($analyzer === null || $this->analyzed >= max(0, (int) ($this->config['explain_analyze_max'] ?? 3))) {
-            return $meta;
+        if ($analyzer === null) {
+            return $meta + ['rows_returned_why' => 'unsupported'];
+        }
+        if ($this->analyzed >= max(0, (int) ($this->config['explain_analyze_max'] ?? 3))) {
+            return $meta + ['rows_returned_why' => 'budget'];
         }
 
         $first = $spans[0];
@@ -547,7 +553,7 @@ final class MissingIndexDetector implements Detector
         } else {
             $bindings = (array) ($first->meta['bindings'] ?? []);
             if (! $this->completeBindings($sql, $bindings)) {
-                return $meta;
+                return $meta + ['rows_returned_why' => 'no_bindings'];
             }
         }
 
@@ -556,6 +562,9 @@ final class MissingIndexDetector implements Detector
             $meta['rows_returned'] = $analyzer->rowsReturned($connection, $sql, $bindings, (int) ($this->config['explain_analyze_timeout_ms'] ?? 2000));
         } catch (Throwable) {
             // the measurement is optional
+        }
+        if ($meta['rows_returned'] === null) {
+            $meta['rows_returned_why'] = 'failed';
         }
 
         return $meta;

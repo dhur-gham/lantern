@@ -7,6 +7,7 @@ namespace Lantern\Tests\Feature\Matrix;
 use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Route;
 use Lantern\Agent\Commands;
 use Lantern\Detection\Detectors\MissingIndexDetector;
 use Lantern\Detection\Explain\DatabaseCatalog;
@@ -247,6 +248,50 @@ final class IndexAnalysisMatrixTest extends MatrixTestCase
             $this->assertSame($expected, $evidence['rows_returned']);
             $this->assertGreaterThan(1000, $evidence['rows_read']);
             $this->assertEqualsWithDelta($evidence['rows_read'] / $expected, $evidence['read_ratio'], 0.1);
+        } finally {
+            $this->migrate('down', array_reverse($files));
+        }
+    }
+
+    public function test_a_request_with_two_in_lists_on_a_second_connection_gets_rows_returned(): void
+    {
+        $files = ['2024_01_01_000001_create_lantern_traces_table', '2024_01_01_000002_create_lantern_issues_table'];
+        $this->migrate('down', array_reverse($files));
+        $this->migrate('up', $files);
+        $kernel = $this->app->make(Kernel::class);
+        foreach (Commands::all() as $class) {
+            $kernel->registerCommand($this->app->make($class));
+        }
+        config(['database.connections.reports' => config('database.connections.'.config('database.default'))]);
+
+        try {
+            $this->seedShop();
+            $this->forceOrdersScan();
+            $force = $this->isPgsql() ? '' : 'straight_join ';
+            $in = implode(', ', array_fill(0, 41, '?'));
+            $sql = "select {$force}mx_items.merchant_id, count(*) as aggregate from mx_orders inner join mx_items on mx_items.order_id = mx_orders.order_id "
+                ."where (mx_orders.payment_status = ? and mx_items.merchant_id in ({$in}) and mx_orders.is_frozen = ?) "
+                ."or (mx_orders.payment_status = ? and mx_items.merchant_id in ({$in})) group by mx_items.merchant_id";
+            $ids = range(1, 41);
+            $bindings = ['paid', ...$ids, false, 'paid', ...$ids];
+            $expected = count(DB::connection('reports')->select($sql, $bindings));
+            $this->assertSame(41, $expected);
+
+            Route::get('/merchants', function () use ($sql, $bindings) {
+                DB::connection('reports')->select($sql, $bindings);
+
+                return 'ok';
+            });
+            $this->get('/merchants')->assertOk();
+
+            $listed = $this->cli('lantern:issues', ['--full' => true]);
+            $plan = array_values(array_filter($listed['issues'] ?? [], fn (array $i): bool => in_array($i['type'], ['missing_index', 'index_not_chosen'], true)));
+            $this->assertCount(1, $plan);
+
+            $evidence = $this->cli('lantern:issue', ['key' => $plan[0]['id']])['issue']['evidence'];
+            $this->assertSame($expected, $evidence['rows_returned']);
+            $this->assertArrayNotHasKey('rows_returned_why', $evidence);
+            $this->assertGreaterThan(1000, $evidence['rows_read']);
         } finally {
             $this->migrate('down', array_reverse($files));
         }

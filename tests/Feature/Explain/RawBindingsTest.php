@@ -178,4 +178,23 @@ final class RawBindingsTest extends AgentTestCase
             }
         }
     }
+
+    public function test_a_slow_query_takes_the_place_of_the_fastest_held_shape_when_the_slots_are_used_up(): void
+    {
+        $trace = $this->begin();
+        $fire = fn (string $sql, array $bindings, float $ms) => event(new \Illuminate\Database\Events\QueryExecuted($sql, $bindings, $ms, DB::connection()));
+
+        for ($i = 0; $i < 25; $i++) {
+            $fire("select id as shape_{$i} from r_orders where customer_id = ?", [$i], 1.0 + $i / 100);
+        }
+        $fire('select * from r_orders where note = ?', ['fast'], 5.0);
+        $fire('select * from r_orders where note = ? and customer_id = ?', ['slow', 7], 850.0);
+
+        $held = array_values(array_filter($this->queries($trace), fn ($s) => $s->rawBindings() !== null));
+        $this->assertCount(25, $held);
+        $slow = array_values(array_filter($this->queries($trace), fn ($s) => str_contains((string) $s->meta['sql'], 'customer_id = ?') && str_contains((string) $s->meta['sql'], 'note')));
+        $this->assertSame(['slow', 7], $slow[0]->rawBindings());
+        $this->assertNull($this->queries($trace)[0]->rawBindings(), 'the fastest shape made room');
+        $this->assertNull($this->queries($trace)[25]->rawBindings(), 'a fast query never displaces a held one');
+    }
 }

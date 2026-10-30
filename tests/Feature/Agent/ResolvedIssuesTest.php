@@ -175,7 +175,7 @@ final class ResolvedIssuesTest extends AgentTestCase
     {
         $flip = $this->planIssue(Issue::TYPE_PLAN_FLIP);
         $notChosen = $this->planIssue(Issue::TYPE_INDEX_NOT_CHOSEN);
-        $this->persist($this->trace([['in' => 41, 'ms' => 900.0]]), [$flip, $notChosen]);
+        $this->persist($this->trace([['ms' => 900.0]]), [$flip, $notChosen]);
 
         $this->app['config']->set('lantern.explain', false);
         $this->persist($this->trace([['in' => 41, 'ms' => 5.0]]));
@@ -311,5 +311,71 @@ final class ResolvedIssuesTest extends AgentTestCase
         $this->persist($this->trace([['ms' => 5.0]]));
 
         $this->assertNotNull($this->resolvedAt($key));
+    }
+
+    private function inSql(int $n, string $hint = ''): string
+    {
+        return 'select '.$hint.' * from "orders" where "merchant_id" in ('.implode(', ', array_fill(0, $n, '?')).')';
+    }
+
+    public function test_a_smaller_input_does_not_resolve_a_slow_query(): void
+    {
+        $issue = $this->slowIssue();
+        $this->persist($this->trace([['ms' => 300.0, 'in' => 41, 'sql' => $this->inSql(41)]]), [$issue]);
+
+        $this->persist($this->trace([['ms' => 20.0, 'in' => 7, 'sql' => $this->inSql(7)]]));
+
+        $this->assertNull($this->resolvedAt($issue->key));
+    }
+
+    public function test_a_smaller_input_does_not_resolve_a_plan_finding(): void
+    {
+        $issue = $this->planIssue(Issue::TYPE_INDEX_NOT_CHOSEN);
+        $this->persist($this->trace([['ms' => 300.0, 'in' => 41, 'sql' => $this->inSql(41)]]), [$issue]);
+
+        $this->persist($this->trace([['ms' => 20.0, 'in' => 7, 'sql' => $this->inSql(7)]]));
+
+        $this->assertNull($this->resolvedAt($issue->key));
+    }
+
+    public function test_the_same_or_a_larger_input_running_clean_resolves(): void
+    {
+        $issue = $this->slowIssue();
+        $this->persist($this->trace([['ms' => 300.0, 'in' => 41, 'sql' => $this->inSql(41)]]), [$issue]);
+
+        $this->persist($this->trace([['ms' => 20.0, 'in' => 41, 'sql' => $this->inSql(41)]]));
+
+        $this->assertNotNull($this->resolvedAt($issue->key));
+    }
+
+    public function test_changed_sql_text_resolves_even_with_a_smaller_input(): void
+    {
+        $issue = $this->slowIssue();
+        $this->persist($this->trace([['ms' => 300.0, 'in' => 41, 'sql' => $this->inSql(41)]]), [$issue]);
+
+        $this->persist($this->trace([['ms' => 20.0, 'in' => 7, 'sql' => $this->inSql(7, '/*+ JOIN_ORDER(a, b) */')]]));
+
+        $this->assertNotNull($this->resolvedAt($issue->key));
+    }
+
+    public function test_a_finding_stored_without_input_facts_resolves_as_before(): void
+    {
+        $issue = $this->slowIssue();
+        $this->persist($this->trace([['ms' => 300.0, 'in' => 41, 'sql' => $this->inSql(41)]]), [$issue]);
+        DB::table('lantern_issues')->update(['in_size' => null, 'sql_hash' => null]);
+
+        $this->persist($this->trace([['ms' => 20.0, 'in' => 7, 'sql' => $this->inSql(7)]]));
+
+        $this->assertNotNull($this->resolvedAt($issue->key));
+    }
+
+    public function test_a_query_without_an_in_list_resolves_normally(): void
+    {
+        $issue = $this->slowIssue();
+        $this->persist($this->trace([['ms' => 300.0, 'sql' => 'select * from "orders" where "id" > ?']]), [$issue]);
+
+        $this->persist($this->trace([['ms' => 20.0, 'sql' => 'select * from "orders" where "id" > ?']]));
+
+        $this->assertNotNull($this->resolvedAt($issue->key));
     }
 }
