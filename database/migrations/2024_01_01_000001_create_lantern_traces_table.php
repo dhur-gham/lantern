@@ -17,6 +17,10 @@ return new class extends Migration
 
     public function up(): void
     {
+        if (\Lantern\Storage\MigrationGuard::skip($this->getConnection())) {
+            return;
+        }
+
         Schema::connection($this->getConnection())->create('lantern_traces', function (Blueprint $table) {
             $table->uuid('id')->primary();
             $table->dateTime('started_at', 3);
@@ -41,6 +45,10 @@ return new class extends Migration
 
     public function down(): void
     {
+        if (\Lantern\Storage\MigrationGuard::skip($this->getConnection())) {
+            return;
+        }
+
         Schema::connection($this->getConnection())->dropIfExists('lantern_traces');
     }
 };

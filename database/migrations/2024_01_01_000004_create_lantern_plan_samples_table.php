@@ -17,6 +17,10 @@ return new class extends Migration
 
     public function up(): void
     {
+        if (\Lantern\Storage\MigrationGuard::skip($this->getConnection())) {
+            return;
+        }
+
         Schema::connection($this->getConnection())->create('lantern_plan_samples', function (Blueprint $table) {
             $table->string('shape', 64);
             $table->unsignedInteger('in_size');
@@ -36,6 +40,10 @@ return new class extends Migration
 
     public function down(): void
     {
+        if (\Lantern\Storage\MigrationGuard::skip($this->getConnection())) {
+            return;
+        }
+
         Schema::connection($this->getConnection())->dropIfExists('lantern_plan_samples');
     }
 };

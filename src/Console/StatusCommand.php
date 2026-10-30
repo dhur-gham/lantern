@@ -6,17 +6,34 @@ use Composer\InstalledVersions;
 use Illuminate\Console\Command;
 use Lantern\Lantern;
 use Lantern\LanternServiceProvider;
+use Lantern\Storage\MigrationGuard;
 use Lantern\Sampling\Sampler;
 
 class StatusCommand extends Command
 {
-    protected $signature = 'lantern:status';
+    protected $signature = 'lantern:status {--json : Print the state as JSON}';
 
     protected $description = 'Show Lantern state and detected framework versions';
 
     public function handle(): int
     {
         $enabled = (bool) config('lantern.enabled') && ! config('lantern.kill_switch');
+
+        $storageConnection = config('lantern.storage.connection');
+        $migrationSkip = MigrationGuard::lastSkip() ?? MigrationGuard::check(is_string($storageConnection) && $storageConnection !== '' ? $storageConnection : null);
+
+        if ($this->option('json')) {
+            $this->getOutput()->write(json_encode([
+                'schema_version' => 1,
+                'schema' => 'lantern.status',
+                'enabled' => $enabled,
+                'version' => LanternServiceProvider::VERSION,
+                'migration_skip' => $migrationSkip,
+            ], JSON_UNESCAPED_SLASHES)."
+", false, \Symfony\Component\Console\Output\OutputInterface::OUTPUT_RAW);
+
+            return self::SUCCESS;
+        }
 
         $this->line('Lantern: '.($enabled ? 'enabled' : 'disabled'));
         $this->line('Version: '.LanternServiceProvider::VERSION);
@@ -65,6 +82,12 @@ class StatusCommand extends Command
         }
         if ($enabled && $this->laravel->environment('testing')) {
             $this->warn('Lantern is enabled under the testing environment; keep it off in phpunit.xml.');
+        }
+
+        if ($migrationSkip === 'connection-unverified') {
+            $this->warn('Lantern migrations were skipped because the storage connection could not be verified. Check lantern.storage.connection, then run php artisan migrate.');
+        } elseif ($migrationSkip === 'tests-other-connection') {
+            $this->line('Migration skip: Lantern migrations on the non-default connection are skipped under tests.');
         }
 
         return self::SUCCESS;

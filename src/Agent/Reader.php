@@ -146,6 +146,9 @@ final class Reader
                 $out['read_ratio'] = round($out['rows_read'] / $out['rows_returned'], 1);
             } elseif (is_string($meta['rows_returned_why'] ?? null) && in_array($meta['rows_returned_why'], ['unsupported', 'budget', 'no_bindings', 'timeout', 'parse_failed', 'failed'], true)) {
                 $out['rows_returned_why'] = $meta['rows_returned_why'];
+                if ($meta['rows_returned_why'] === 'timeout') {
+                    $out['rows_returned_hint'] = 'The replay hit its time limit; raise LANTERN_EXPLAIN_ANALYZE_TIMEOUT_MS (explain_analyze_timeout_ms) to measure rows_returned.';
+                }
             }
         }
         foreach (['tables', 'projected'] as $key) {

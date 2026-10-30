@@ -36,6 +36,10 @@ final class NPlusOneDetector implements Detector
                 continue;
             }
 
+            if ($this->isBulkWrite((string) ($span->meta['sql'] ?? $span->meta['normalized_sql'] ?? ''))) {
+                continue;
+            }
+
             $site = $span->callSite !== null ? $span->callSite['file'].':'.$span->callSite['line'] : 'unknown';
             $groups[$span->meta['fingerprint'].'|'.$site][] = $span;
         }
@@ -82,6 +86,26 @@ final class NPlusOneDetector implements Detector
         usort($issues, fn (Issue $a, Issue $b) => $b->totalMs <=> $a->totalMs);
 
         return array_slice($issues, 0, self::MAX_ISSUES);
+    }
+
+    /** An UPDATE/DELETE over an IN list, subquery, BETWEEN or id range, or a multi-row INSERT, is deliberate batching. */
+    private function isBulkWrite(string $sql): bool
+    {
+        $s = strtolower(trim((string) preg_replace('/\s+/', ' ', str_replace(['`', '"'], '', $sql))));
+
+        if (preg_match('/^insert\b/', $s) === 1) {
+            return preg_match('/\bvalues\s*\([^)]*\)\s*,\s*\(/', $s) === 1 || preg_match('/\)\s*select\b/', $s) === 1;
+        }
+
+        if (preg_match('/^(update|delete)\b/', $s) !== 1 || ($pos = strpos($s, ' where ')) === false) {
+            return false;
+        }
+
+        $where = substr($s, $pos);
+
+        return preg_match('/\bin\s*\(\s*(select\b|[^)]*,)/', $where) === 1
+            || preg_match('/\bbetween\b/', $where) === 1
+            || preg_match('/\b(?:\w+\.)?id\s*(?:>=|<=|>|<)\s*[?\d]/', $where) === 1;
     }
 
     private function short(string $sql): string

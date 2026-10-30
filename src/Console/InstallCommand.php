@@ -5,6 +5,7 @@ namespace Lantern\Console;
 use Illuminate\Console\Command;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Support\Facades\DB;
+use Lantern\Storage\MigrationGuard;
 use Symfony\Component\Console\Output\OutputInterface;
 use Throwable;
 
@@ -26,6 +27,7 @@ class InstallCommand extends Command
         '2024_01_01_000004_create_lantern_plan_samples_table' => '0.4.0',
         '2024_01_01_000005_add_sql_hash_to_lantern_plan_samples_table' => '0.4.1',
         '2024_01_01_000006_add_resolved_state_to_lantern_issues_table' => '0.4.2',
+        '2024_01_01_000007_add_site_hash_to_lantern_issues_table' => '0.5.1',
     ];
 
     /** Migrations whose change a create migration already includes, so printing both would add the column twice. */
@@ -56,6 +58,12 @@ class InstallCommand extends Command
         }
 
         $this->info($this->option('local') ? 'Lantern installed.' : 'Lantern installed. Set LANTERN_ENABLED=true to enable it.');
+
+        $this->line('Running your test suite? Add <env name="LANTERN_DB_CONNECTION" value=""/> to phpunit.xml so migrate and RefreshDatabase use the testing database, not the real one (Lantern migrations on another connection are skipped under tests).');
+
+        if (MigrationGuard::lastSkip() === 'connection-unverified') {
+            $this->warn('A Lantern migration was skipped because its connection could not be verified; the tables may not exist. Check lantern.storage.connection, then run php artisan migrate.');
+        }
 
         return self::SUCCESS;
     }

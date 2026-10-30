@@ -6,6 +6,20 @@ Lantern loads its migrations from the package, so `php artisan migrate` is enoug
 
 If your team applies schema changes by hand, print the SQL instead of migrating (see [Applying the schema by hand](#applying-the-schema-by-hand)).
 
+## 0.5.1
+
+**Schema.** One new migration, `2024_01_01_000007_add_site_hash_to_lantern_issues_table`, adds a nullable `site_hash` column to `lantern_issues`. Run `php artisan migrate`, or print the SQL with `php artisan lantern:install --sql --since=0.5.1`. Until it has run, Lantern keeps working as before and findings are only resolved when their query runs clean (see below).
+
+**A removed query now resolves its finding.** Until now a finding resolved only when its query shape ran again without producing it, so a fix that deleted the query left the finding open. It now also resolves when a later trace of the same route runs the finding's call-site function without the query and the call-site file has changed since the finding last fired (the file's content hash is stored on the finding). The same code skipping the query is a data difference, not a fix, and the finding stays open. Traces without a route are not used for this.
+
+**Fixes.**
+
+- A chunked bulk write (`UPDATE` or `DELETE` with an `IN` list, `BETWEEN` or an id range; multi-row `INSERT`; `INSERT ... SELECT`) is no longer reported as `n_plus_one`. A per-row `WHERE id = ?` loop still is.
+- Closure line numbers no longer enter a finding's identity, so adding lines above a closure does not turn a finding into resolved plus new in `lantern:diff`.
+- A stored trace payload is capped at 4 MiB: above that, strings over 8 KiB are cut with a `...[truncated N bytes]` marker, and a payload still over the cap is stored as `{"truncated": true, "original_bytes": N}`. Encoding no longer holds the JSON and its compressed copy at the same time. Normal traces are far below the cap.
+- When a `rows_returned` replay hits its time limit, the evidence now carries `rows_returned_hint` pointing at `LANTERN_EXPLAIN_ANALYZE_TIMEOUT_MS`.
+- Lantern's migrations are skipped while the host application runs its tests if `LANTERN_DB_CONNECTION` points at a different connection from the application's default, so `php artisan test` no longer creates Lantern tables in the real Lantern database. Add `<env name="LANTERN_DB_CONNECTION" value=""/>` to `phpunit.xml`. A skip caused by a connection that could not be verified is reported by `lantern:install` and `lantern:status` (`lantern:status --json` adds `migration_skip`).
+
 ## 0.5.0
 
 **No schema change.** Nothing to migrate.

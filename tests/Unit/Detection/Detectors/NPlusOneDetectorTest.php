@@ -108,6 +108,25 @@ final class NPlusOneDetectorTest extends TestCase
         $this->assertCount(20, $this->det()->detect($this->trace()));
     }
 
+    public function test_chunked_bulk_writes_are_not_flagged(): void
+    {
+        for ($i = 0; $i < 8; $i++) {
+            $this->q('update `posts` set `x` = ? where `id` in (?, ?, ?)', [1, 2, 3, 4]);
+            $this->q('delete from posts where id between ? and ?', [1, 2], 1.0, 'app/B.php', 2);
+            $this->q('update posts set x = ? where id >= ? and id <= ?', [1, 2, 3], 1.0, 'app/C.php', 3);
+            $this->q('insert into posts (a) values (?), (?)', [1, 2], 1.0, 'app/D.php', 4);
+        }
+        $this->assertSame([], $this->det()->detect($this->trace()));
+    }
+
+    public function test_per_row_update_loop_is_still_flagged(): void
+    {
+        for ($i = 1; $i <= 6; $i++) {
+            $this->q('update `posts` set `x` = ? where `id` = ?', [1, $i]);
+        }
+        $this->assertCount(1, $this->det()->detect($this->trace()));
+    }
+
     public function test_paging_call_site_is_not_flagged(): void
     {
         for ($i = 0; $i < 8; $i++) {

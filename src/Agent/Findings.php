@@ -74,7 +74,7 @@ final class Findings
         $type = (string) ($i['type'] ?? '');
         $meta = (array) ($i['meta'] ?? []);
         $site = self::site($i['call_site'] ?? null);
-        $where = $site === null ? '-' : $site['file'].'#'.($site['function'] ?? '');
+        $where = self::where($site);
 
         $parts = match (true) {
             in_array($type, [Issue::TYPE_N_PLUS_ONE, Issue::TYPE_SLOW], true) && is_string($meta['fingerprint'] ?? null) && $meta['fingerprint'] !== '' => [$meta['fingerprint']],
@@ -84,6 +84,12 @@ final class Findings
         };
 
         return $parts === null ? self::keyOf($i) : Issue::key($type, ...[...$parts, $where]);
+    }
+
+    /** Call-site identity inside a shape: file and function, closure line numbers stripped. */
+    public static function where(?array $site): string
+    {
+        return $site === null ? '-' : $site['file'].'#'.preg_replace('/:\d+(?=\})/', '', $site['function'] ?? '');
     }
 
     /** @param array<string, mixed> $i */
