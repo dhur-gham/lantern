@@ -123,6 +123,31 @@ final class LivewireInstrumentationTest extends TestCase
         $this->assertSame('livewire:App\Foo::a', $trace->meta['route']);
     }
 
+    public function test_a_batch_is_named_after_the_main_call_not_after_filament_components_or_lazy_loads(): void
+    {
+        $trace = $this->traceWithCalls([
+            ['Filament\Livewire\DatabaseNotifications', '__lazyLoad'],
+            ['Filament\Livewire\GlobalSearch', 'updated.search'],
+            ['App\Pages\EditItemSimple', '__lazyLoad'],
+            ['App\Pages\EditItemSimple', 'update'],
+        ]);
+
+        $this->assertSame('livewire:App\Pages\EditItemSimple::update', $trace->meta['route']);
+        $this->assertSame([
+            'livewire:Filament\Livewire\DatabaseNotifications::__lazyLoad',
+            'livewire:Filament\Livewire\GlobalSearch::updated.search',
+            'livewire:App\Pages\EditItemSimple::__lazyLoad',
+            'livewire:App\Pages\EditItemSimple::update',
+        ], $trace->meta['livewire_routes']);
+    }
+
+    public function test_a_batch_of_only_filament_calls_falls_back_to_the_first(): void
+    {
+        $trace = $this->traceWithCalls([['Filament\Livewire\DatabaseNotifications', '__lazyLoad']]);
+
+        $this->assertSame('livewire:Filament\Livewire\DatabaseNotifications::__lazyLoad', $trace->meta['route']);
+    }
+
     public function test_the_same_interaction_has_the_same_route_whatever_rows_or_batching(): void
     {
         $first = $this->traceWithCalls([

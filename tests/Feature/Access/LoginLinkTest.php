@@ -156,7 +156,7 @@ final class LoginLinkTest extends AccessTestCase
 
         $stored = \Illuminate\Support\Facades\DB::table('lantern_traces')->where('path', '/probe')->first();
         $this->assertNotNull($stored, 'the request should have been traced');
-        $this->assertArrayNotHasKey('host', json_decode((string) gzdecode(base64_decode(substr((string) $stored->payload, 3))) ?: (string) $stored->payload, true)['meta'] ?? []);
+        $this->assertArrayNotHasKey('host', \Lantern\Storage\PayloadCodec::decode((string) $stored->payload)['meta'] ?? []);
 
         [$code, $data] = $this->login(['surface' => 'panel']);
 

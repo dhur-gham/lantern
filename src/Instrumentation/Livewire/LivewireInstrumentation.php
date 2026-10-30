@@ -181,9 +181,26 @@ final class LivewireInstrumentation
         // what ran, exactly: for display
         $trace->meta['livewire_calls'] = $calls;
         $trace->meta['livewire_route'] = 'livewire:'.implode('+', $calls);
-        // what the interaction is: the first call with record keys and list positions generalised, so the same
+        // what the interaction is: the main call with record keys and list positions generalised, so the same
         // interaction has the same route on every run, whichever rows it touched or however many calls were batched
-        $trace->meta['route'] = 'livewire:'.self::normalise($calls[0]);
+        $routes = array_values(array_unique(array_map(fn (string $c): string => 'livewire:'.self::normalise($c), $calls)));
+        $trace->meta['livewire_routes'] = $routes;
+        $main = 0;
+        foreach ($calls as $i => $call) {
+            if (self::isMainCall($call)) {
+                $main = $i;
+                break;
+            }
+        }
+        $trace->meta['route'] = 'livewire:'.self::normalise($calls[$main]);
+    }
+
+    /** Filament's own components (notifications, global search) and lazy loads ride along in a batch; they are not the interaction. */
+    private static function isMainCall(string $call): bool
+    {
+        [$class, $method] = array_pad(explode('::', $call, 2), 2, '');
+
+        return ! str_starts_with($class, 'Filament\\') &&! str_starts_with($method, '__lazyLoad');
     }
 
     /**
