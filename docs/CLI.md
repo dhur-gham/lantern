@@ -142,6 +142,7 @@ Set `schema_snapshot` (`LANTERN_SCHEMA_SNAPSHOT`) to the snapshot path to have f
 Human-readable output, no JSON.
 
 - `lantern:install [--force] [--local]` publishes config and migrations; `--local` also writes `LANTERN_ENABLED=true`, `LANTERN_STORAGE_DRIVER=database` and `LANTERN_KEEP_RATE=1` to `.env`.
+- `lantern:install --sql [--connection=] [--since=]` prints the migration SQL for a connection's database driver instead of installing, so teams that apply schema changes by hand can review and run it. It touches nothing: plain SQL on stdout with a comment naming each migration, problems on stderr. `--since=0.4.0` keeps only the migrations first shipped in that version or later (what an upgrading install is missing); exit 2 on a bad `--since` or an unknown connection, 1 when a migration's SQL could not be generated. See [Upgrading](UPGRADING.md).
 - `lantern:status` prints enabled state, version, mode, storage driver, storage connection and app name (database driver), keep rate, Laravel and Livewire versions, and warns when traces would be missing (non-database storage, keep rate below 1 locally, enabled under `testing`) or could end up in the wrong database (`LANTERN_DB_CONNECTION` unset).
 - `lantern:prune [--days=] [--issues-days=] [--dry-run]` deletes traces and issues past retention (defaults `lantern.retention.days` 7 and `issues_days` 30) and prints the counts.
 - `lantern:trace:dump [--last]` prints the latest in-process trace or `storage/lantern/last-trace.json` (needs `LANTERN_DEBUG_WRITE_LAST_TRACE=true`); exits 1 when none is found.

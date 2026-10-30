@@ -153,6 +153,88 @@ final class IndexAnalysisMatrixTest extends MatrixTestCase
         $this->assertStringContainsString('too few distinct values', (string) $issues[0]->suggestion);
     }
 
+    public function test_unindexed_flags_without_a_distinct_count_never_lead(): void
+    {
+        $this->seedShop();
+        $stats = (new DatabaseCatalog)->stats(self::driver(), 'mx_tickets');
+        if (! $this->isPgsql()) {
+            // MySQL and MariaDB count distinct values only for indexed columns
+            $this->assertNull($stats['columns']['state']['distinct']);
+            $this->assertNull($stats['columns']['is_vip']['distinct']);
+        }
+
+        $issues = (new MissingIndexDetector($this->config()))->detect(
+            $this->queryTrace('select * from mx_tickets where state = ? and is_vip = ? and owner_id = ?', [1, 0, 7]),
+        );
+
+        $this->assertCount(1, $issues);
+        $this->assertSame(['owner_id', 'state', 'is_vip'], $issues[0]->meta['columns']);
+
+        $only = (new MissingIndexDetector($this->config()))->detect(
+            $this->queryTrace('select * from mx_tickets where state = ?', [1]),
+        );
+        $this->assertSame([], $only[0]->meta['columns']);
+    }
+
+    public function test_explain_analyze_counts_the_rows_the_query_returns(): void
+    {
+        $this->seedShop();
+        $this->forceOrdersScan();
+        $bindings = ['paid', 1, 2, 3];
+        $expected = count(DB::select($this->joinSql(), $bindings));
+        $this->assertGreaterThan(0, $expected);
+        $config = ['explain_analyze' => true] + $this->config();
+
+        $issues = (new MissingIndexDetector($config))->detect($this->queryTrace($this->joinSql(), $bindings));
+
+        $this->assertCount(1, $issues);
+        $this->assertSame($expected, $issues[0]->meta['rows_returned']);
+        $this->assertGreaterThan(1000, $issues[0]->meta['rows_read']);
+
+        $plain = (new MissingIndexDetector($config))->detect($this->queryTrace('select * from mx_tickets where owner_id = ?', [7]));
+        $this->assertSame(count(DB::select('select * from mx_tickets where owner_id = ?', [7])), $plain[0]->meta['rows_returned']);
+
+        $off = (new MissingIndexDetector($this->config()))->detect($this->queryTrace($this->joinSql(), $bindings));
+        $this->assertNull($off[0]->meta['rows_returned']);
+    }
+
+    public function test_rows_returned_honours_limit_and_aggregates(): void
+    {
+        $this->seedShop();
+        $runner = new ExplainRunner;
+
+        $this->assertSame(5, $runner->rowsReturned(self::driver(), 'select * from mx_tickets where owner_id > ? limit 5', [0]));
+        $this->assertSame(1, $runner->rowsReturned(self::driver(), 'select count(*) from mx_tickets where owner_id > ?', [0]));
+        $this->assertSame(0, $runner->rowsReturned(self::driver(), 'select * from mx_tickets where owner_id > ?', [100000]));
+    }
+
+    public function test_a_slow_query_is_cut_off_and_leaves_the_connection_usable(): void
+    {
+        $this->seedShop();
+        $started = microtime(true);
+
+        $rows = (new ExplainRunner)->rowsReturned(
+            self::driver(),
+            'select count(*) from mx_orders a cross join mx_orders b cross join mx_orders c where a.order_id <> b.order_id',
+            [],
+            150,
+        );
+
+        $this->assertNull($rows);
+        $this->assertLessThan(5.0, microtime(true) - $started);
+        $this->assertFalse(DB::connection()->getReadPdo()->inTransaction());
+        $this->assertSame(6000, (int) DB::table('mx_orders')->count());
+    }
+
+    public function test_statements_with_side_effects_are_never_replayed(): void
+    {
+        $this->seedShop();
+        $runner = new ExplainRunner;
+
+        $this->assertNull($runner->rowsReturned(self::driver(), 'select * from mx_tickets where id = ? for update', [1]));
+        $this->assertNull($runner->rowsReturned(self::driver(), $this->isPgsql() ? 'select pg_sleep(0)' : 'select sleep(0)'));
+    }
+
     public function test_indexed_lookup_is_not_flagged(): void
     {
         $this->seedShop();

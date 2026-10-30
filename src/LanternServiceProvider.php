@@ -26,11 +26,15 @@ use Lantern\Trace\Recorder;
 
 class LanternServiceProvider extends ServiceProvider
 {
-    public const VERSION = '0.4.0';
+    public const VERSION = '0.4.1';
+
+    /** Detectors added after 0.3: merged into a published `detectors` list that predates them. */
+    public const ADDED_DETECTORS = [\Lantern\Detection\Detectors\PlanFlipDetector::class];
 
     public function register(): void
     {
         $this->mergeConfigFrom(__DIR__.'/../config/lantern.php', 'lantern');
+        $this->mergeDetectors();
         $this->ignoreOwnPath();
 
         // Readers (CLI, MCP, dashboard) use the configured storage connection even while tracing is off.
@@ -137,6 +141,51 @@ class LanternServiceProvider extends ServiceProvider
                 InstallCommand::class, StatusCommand::class, TraceDumpCommand::class, PruneCommand::class,
                 ...\Lantern\Agent\Commands::all(),
             ], 'class_exists')));
+        }
+    }
+
+    /**
+     * The detectors that run: the configured list, plus detectors added since 0.3 that an older published list
+     * lacks, minus `disabled_detectors`. Older detectors removed from a published list stay off.
+     *
+     * @return list<string>
+     */
+    public static function effectiveDetectors(mixed $published, mixed $disabled): array
+    {
+        $list = array_values(array_filter(is_array($published) ? $published : [], 'is_string'));
+        $have = array_map(fn (string $c): string => ltrim($c, '\\'), $list);
+        foreach (self::ADDED_DETECTORS as $class) {
+            if (! in_array($class, $have, true)) {
+                $list[] = $class;
+            }
+        }
+        $off = array_map(fn (string $c): string => ltrim($c, '\\'), array_filter(is_array($disabled) ? $disabled : [], 'is_string'));
+
+        return array_values(array_filter($list, fn (string $c): bool => ! in_array(ltrim($c, '\\'), $off, true)));
+    }
+
+    /** @return list<string> the detectors shipped in the package's default config */
+    public static function packageDetectors(): array
+    {
+        static $defaults = null;
+        if ($defaults === null) {
+            try {
+                $config = require __DIR__.'/../config/lantern.php';
+                $defaults = array_values(array_filter((array) ($config['detectors'] ?? []), 'is_string'));
+            } catch (\Throwable) {
+                $defaults = [];
+            }
+        }
+
+        return $defaults;
+    }
+
+    private function mergeDetectors(): void
+    {
+        try {
+            $config = $this->app['config'];
+            $config->set('lantern.detectors', self::effectiveDetectors($config->get('lantern.detectors'), $config->get('lantern.disabled_detectors')));
+        } catch (\Throwable) {
         }
     }
 

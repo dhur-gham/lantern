@@ -46,17 +46,31 @@ return [
         \Lantern\Detection\Detectors\LazyLoadDetector::class,
     ],
 
+    // Detector classes to turn off. Detectors added in a release newer than your published config are merged into
+    // `detectors` automatically; list one here to opt out of it (this also works for the older detectors).
+    'disabled_detectors' => [],
+
     // Run EXPLAIN on slow queries to detect missing indexes.
     'explain' => env('LANTERN_EXPLAIN', false),
 
+    // Also measure how many rows a flagged query returns (so findings show "read 780k to return 41"). This runs the
+    // query a second time after the request, in a read-only, time-limited statement, for at most explain_analyze_max
+    // queries per trace; queries with locks or other side effects are never replayed. Needs 'explain'.
+    'explain_analyze' => env('LANTERN_EXPLAIN_ANALYZE', false),
+    'explain_analyze_max' => (int) env('LANTERN_EXPLAIN_ANALYZE_MAX', 3),
+    'explain_analyze_timeout_ms' => (int) env('LANTERN_EXPLAIN_ANALYZE_TIMEOUT_MS', 2000),
+
     // plan_flip (needs 'explain'): a plan change or cost growth between IN-list sizes is reported when the larger size
     // takes at least min_ms or reads at least min_rows, and cost grows more than `factor` times faster than the list.
-    // Each size is re-EXPLAINed at most every refresh_minutes.
+    // Each size is re-EXPLAINed at most every refresh_minutes, or sooner (at most every 5 minutes) when its time moves
+    // time_deviation times above or below the stored average; 0 turns that off. Samples taken from a different SQL text
+    // (for example after adding an optimizer hint) are discarded.
     'plan_flip' => [
         'factor' => (float) env('LANTERN_PLAN_FLIP_FACTOR', 3),
         'min_ms' => (float) env('LANTERN_PLAN_FLIP_MIN_MS', 10),
         'min_rows' => (int) env('LANTERN_PLAN_FLIP_MIN_ROWS', 1000),
         'refresh_minutes' => (int) env('LANTERN_PLAN_FLIP_REFRESH_MINUTES', 60),
+        'time_deviation' => (float) env('LANTERN_PLAN_FLIP_TIME_DEVIATION', 4),
     ],
 
     // Path to a production index snapshot (php artisan lantern:schema-snapshot > prod-schema.json). When set,

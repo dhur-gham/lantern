@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Lantern\Detection\Detectors;
 
 use Lantern\Detection\Detector;
+use Lantern\Detection\Explain\AnalyzeSource;
 use Lantern\Detection\Explain\Catalog;
 use Lantern\Detection\Explain\DatabaseCatalog;
 use Lantern\Detection\Explain\ExplainRunner;
@@ -38,11 +39,14 @@ final class MissingIndexDetector implements Detector
 
     private const SCAN_TYPES = ['ALL', 'INDEX', 'RANGE', 'INDEX_MERGE', 'FULLTEXT'];
 
+    private int $analyzed = 0;
+
     /** @param array<string, mixed> $config full config('lantern') */
     public function __construct(
         private readonly array $config,
         private readonly ?PlanSource $runner = null,
         private readonly ?Catalog $catalog = null,
+        private readonly ?AnalyzeSource $analyzer = null,
     ) {
     }
 
@@ -51,6 +55,7 @@ final class MissingIndexDetector implements Detector
         if (! ($this->config['explain'] ?? false)) {
             return [];
         }
+        $this->analyzed = 0;
 
         $slowMs = (float) ($this->config['thresholds']['slow_query_ms'] ?? 100);
         $explainMs = (float) ($this->config['thresholds']['explain_min_ms'] ?? 0);
@@ -174,7 +179,7 @@ final class MissingIndexDetector implements Detector
                 $totalMs,
                 $callSite,
                 $spanIds,
-                ['table' => $unused['table'], 'index' => $unused['index'], 'index_columns' => $unused['columns'], 'used_key' => $unused['used_key'], 'scanned_table' => $scanned, 'plan' => $summary] + $meta,
+                ['table' => $unused['table'], 'index' => $unused['index'], 'index_columns' => $unused['columns'], 'used_key' => $unused['used_key'], 'scanned_table' => $scanned, 'plan' => $summary] + $this->withReturned($meta, $runner, $connection, $first),
                 "The optimizer chose a different plan (full scan on {$scanned}). Check it with EXPLAIN ANALYZE, force the order with a join-order hint, or refresh statistics with ANALYZE TABLE {$unused['table']}.".$projection,
             );
         }
@@ -189,7 +194,7 @@ final class MissingIndexDetector implements Detector
                 $totalMs,
                 $callSite,
                 $spanIds,
-                ['table' => $scanned, 'columns' => [], 'or_across_tables' => true, 'plan' => $summary, 'rows' => $plan['rows']] + $meta,
+                ['table' => $scanned, 'columns' => [], 'or_across_tables' => true, 'plan' => $summary, 'rows' => $plan['rows']] + $this->withReturned($meta, $runner, $connection, $first),
                 self::OR_MESSAGE.$projection,
             );
         }
@@ -212,7 +217,7 @@ final class MissingIndexDetector implements Detector
             $totalMs,
             $callSite,
             $spanIds,
-            ['table' => $scanned, 'columns' => $suggestion['columns'], 'plan' => $summary, 'rows' => $plan['rows']] + $meta,
+            ['table' => $scanned, 'columns' => $suggestion['columns'], 'plan' => $summary, 'rows' => $plan['rows']] + $this->withReturned($meta, $runner, $connection, $first),
             ($suggestion['columns'] === []
                 ? 'The filtered columns have too few distinct values for an index on them to help ('.implode(', ', $suggestion['skipped']).'); look at the rest of the query'
                 : 'Consider an index on ('.implode(', ', $suggestion['columns']).')').$projection,
@@ -486,16 +491,76 @@ final class MissingIndexDetector implements Detector
         return ['columns' => array_column($items, 'column'), 'skipped' => []];
     }
 
-    /** @param array{type: ?string, distinct: ?int}|null $info */
+    /**
+     * A real distinct count decides. Without one (MySQL only counts the leading column of an index, so a flag that
+     * leads no index has none), fall back to the column's name and its type: a flag-like name, or a type that holds
+     * only a handful of values (tinyint, bit, boolean, a short enum).
+     *
+     * @param array{type: ?string, distinct: ?int}|null $info
+     */
     private function lowCardinality(string $column, ?array $info, int $limit): bool
     {
-        if ($info === null) {
-            return preg_match('/^(is|has|can|should|was)_/i', $column) === 1;
-        }
-        if ($info['type'] !== null && preg_match('/^(tinyint\(1\)|bit\(1\)|bool(ean)?)$/i', trim($info['type'])) === 1) {
+        $type = $info['type'] ?? null;
+        if ($type !== null && preg_match('/^(tinyint\(1\)|bit(\(1\))?|bool(ean)?)$/i', trim($type)) === 1) {
             return true;
         }
+        if (($info['distinct'] ?? null) !== null) {
+            return $info['distinct'] <= $limit;
+        }
 
-        return $info['distinct'] !== null && $info['distinct'] <= $limit;
+        return preg_match('/^(is|has|can|should|was|did|needs?)_|_flag$/i', $column) === 1
+            || ($type !== null && (preg_match('/^(tinyint|bit)\b/i', trim($type)) === 1 || $this->shortEnum($type, $limit)));
+    }
+
+    private function shortEnum(string $type, int $limit): bool
+    {
+        return preg_match('/^enum\s*\(/i', trim($type)) === 1 && preg_match_all("/'(?:[^']|'')*'/", $type) <= max($limit, 2);
+    }
+
+    /**
+     * Rows the query returns, measured with a second, time-limited run. Opt-in (explain_analyze), capped per trace,
+     * and only when the captured bindings are complete: redacted or truncated values would measure a different query.
+     *
+     * @param  array<string, mixed>  $meta
+     * @return array<string, mixed>
+     */
+    private function withReturned(array $meta, PlanSource $runner, ?string $connection, Span $first): array
+    {
+        if (! ($this->config['explain_analyze'] ?? false)) {
+            return $meta;
+        }
+        $analyzer = $this->analyzer ?? ($runner instanceof AnalyzeSource ? $runner : null);
+        $sql = (string) $first->meta['sql'];
+        $bindings = (array) ($first->meta['bindings'] ?? []);
+        if ($analyzer === null || $this->analyzed >= max(0, (int) ($this->config['explain_analyze_max'] ?? 3)) || ! $this->completeBindings($sql, $bindings)) {
+            return $meta;
+        }
+
+        $this->analyzed++;
+        try {
+            $meta['rows_returned'] = $analyzer->rowsReturned($connection, $sql, $bindings, (int) ($this->config['explain_analyze_timeout_ms'] ?? 2000));
+        } catch (Throwable) {
+            // the measurement is optional
+        }
+
+        return $meta;
+    }
+
+    /** @param array<int|string, mixed> $bindings */
+    private function completeBindings(string $sql, array $bindings): bool
+    {
+        $needed = substr_count($sql, '?');
+        if ($needed !== count($bindings)) {
+            return false;
+        }
+        $max = max(1, (int) ($this->config['binding_max_length'] ?? 200));
+        foreach ($bindings as $value) {
+            if (is_string($value) && (preg_match('/^\[(redacted|binary \d+ bytes|[\w\\\\]+)\]$/', $value) === 1
+                || (str_ends_with($value, '...') && mb_strlen($value) === $max + 3))) {
+                return false;
+            }
+        }
+
+        return true;
     }
 }

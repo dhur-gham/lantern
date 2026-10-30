@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace Lantern\Tests\Feature\Explain;
 
 use Lantern\Detection\Detectors\MissingIndexDetector;
+use Lantern\Detection\Explain\AnalyzeSource;
 use Lantern\Detection\Explain\Catalog;
+use Lantern\Detection\Explain\ExplainRunner;
 use Lantern\Detection\Explain\PlanSource;
 use Lantern\Detection\Issue;
 use Lantern\Schema\ProductionSnapshot;
@@ -23,15 +25,21 @@ final class IndexAnalysisTest extends QueryTestCase
         return ['explain' => true, 'thresholds' => ['slow_query_ms' => 100, 'n_plus_one_min_repeats' => 5]];
     }
 
-    private function traceFor(string $sql): Trace
+    /**
+     * @param  list<mixed>  $bindings
+     * @param  list<string>  $more  further query shapes in the same trace
+     */
+    private function traceFor(string $sql, array $bindings = [], array $more = []): Trace
     {
         $recorder = $this->recorder();
         $recorder->reset();
         $trace = $recorder->begin();
-        $now = hrtime(true);
-        $recorder->recordClosed(SpanType::Query, 'q', $now, $now + 60_000_000, [
-            'sql' => $sql, 'bindings' => [], 'fingerprint' => md5($sql), 'connection' => 'testing', 'time_ms' => 60.0, 'failed' => false,
-        ]);
+        foreach ([$sql, ...$more] as $i => $statement) {
+            $now = hrtime(true);
+            $recorder->recordClosed(SpanType::Query, 'q'.$i, $now, $now + 60_000_000, [
+                'sql' => $statement, 'bindings' => $i === 0 ? $bindings : array_fill(0, substr_count($statement, '?'), 1), 'fingerprint' => md5($statement), 'connection' => 'testing', 'time_ms' => 60.0, 'failed' => false,
+            ]);
+        }
 
         return $trace;
     }
@@ -299,6 +307,166 @@ final class IndexAnalysisTest extends QueryTestCase
 
         $this->assertSame('Index exists but was not chosen: order_items.merchant_id_2', $issues[0]->title);
         $this->assertSame('orders', $issues[0]->meta['tables'][0]['table']);
+    }
+
+    public function test_flags_without_a_distinct_count_are_recognised_by_name_and_type(): void
+    {
+        $catalog = $this->catalog([], ['orders' => [
+            'customer_id' => ['type' => 'int', 'distinct' => null],
+            'is_vip' => ['type' => 'int', 'distinct' => null],
+            'state' => ['type' => 'tinyint(4)', 'distinct' => null],
+            'kind' => ['type' => "enum('a','b')", 'distinct' => null],
+        ]]);
+        $plan = $this->plan([['table' => 'orders', 'rows' => 5000, 'key' => null, 'type' => 'ALL']]);
+
+        $issues = $this->detect('select * from orders where is_vip = ? and state = ? and kind = ? and customer_id = ?', $plan, $catalog);
+
+        $this->assertSame(['customer_id', 'is_vip', 'state', 'kind'], $issues[0]->meta['columns']);
+    }
+
+    public function test_only_flags_without_a_distinct_count_give_no_column_suggestion(): void
+    {
+        $catalog = $this->catalog([], ['orders' => ['state' => ['type' => 'tinyint(4)', 'distinct' => null]]]);
+        $plan = $this->plan([['table' => 'orders', 'rows' => 5000, 'key' => null, 'type' => 'ALL']]);
+
+        $issues = $this->detect('select * from orders where state = ?', $plan, $catalog);
+
+        $this->assertSame([], $issues[0]->meta['columns']);
+        $this->assertStringContainsString('too few distinct values', (string) $issues[0]->suggestion);
+    }
+
+    public function test_a_real_distinct_count_overrides_the_name_and_type_guess(): void
+    {
+        $catalog = $this->catalog([], ['orders' => [
+            'is_new' => ['type' => 'int', 'distinct' => 5000],
+            'customer_id' => ['type' => 'int', 'distinct' => 60],
+            'level' => ['type' => 'tinyint(4)', 'distinct' => 40],
+        ]]);
+        $plan = $this->plan([['table' => 'orders', 'rows' => 5000, 'key' => null, 'type' => 'ALL']]);
+
+        $issues = $this->detect('select * from orders where level = ? and customer_id = ? and is_new = ?', $plan, $catalog);
+
+        $this->assertSame(['is_new', 'customer_id', 'level'], $issues[0]->meta['columns']);
+    }
+
+    /** @return AnalyzeSource&object{calls: list<array<string, mixed>>} */
+    private function analyzer(int|\Throwable|null $answer): AnalyzeSource
+    {
+        return new class($answer) implements AnalyzeSource
+        {
+            /** @var list<array<string, mixed>> */
+            public array $calls = [];
+
+            public function __construct(private readonly int|\Throwable|null $answer)
+            {
+            }
+
+            public function rowsReturned(?string $connectionName, string $sql, array $bindings = [], int $timeoutMs = 2000): ?int
+            {
+                $this->calls[] = ['sql' => $sql, 'bindings' => $bindings, 'timeout' => $timeoutMs];
+                if ($this->answer instanceof \Throwable) {
+                    throw $this->answer;
+                }
+
+                return $this->answer;
+            }
+        };
+    }
+
+    /**
+     * @param  array<string, mixed>  $extra
+     * @param  list<mixed>  $bindings
+     * @param  list<string>  $more
+     * @return list<Issue>
+     */
+    private function detectAnalyzed(AnalyzeSource $analyzer, array $extra = [], array $bindings = [1], array $more = []): array
+    {
+        $plan = $this->plan([['table' => 'orders', 'rows' => 820000, 'key' => null, 'type' => 'ALL']]);
+        $config = array_replace_recursive($this->config(), ['explain_analyze' => true], $extra);
+
+        return (new MissingIndexDetector($config, $plan, $this->catalog(), $analyzer))
+            ->detect($this->traceFor('select * from orders where customer_id = ?', $bindings, $more));
+    }
+
+    public function test_rows_returned_is_measured_when_explain_analyze_is_on(): void
+    {
+        $analyzer = $this->analyzer(41);
+
+        $issues = $this->detectAnalyzed($analyzer, ['explain_analyze_timeout_ms' => 1500]);
+
+        $this->assertSame(41, $issues[0]->meta['rows_returned']);
+        $this->assertSame(820000, $issues[0]->meta['rows_read']);
+        $this->assertCount(1, $analyzer->calls);
+        $this->assertSame([1], $analyzer->calls[0]['bindings']);
+        $this->assertSame(1500, $analyzer->calls[0]['timeout']);
+    }
+
+    public function test_nothing_is_replayed_unless_explain_analyze_is_on(): void
+    {
+        $analyzer = $this->analyzer(41);
+        $plan = $this->plan([['table' => 'orders', 'rows' => 820000, 'key' => null, 'type' => 'ALL']]);
+
+        $issues = (new MissingIndexDetector($this->config(), $plan, $this->catalog(), $analyzer))
+            ->detect($this->traceFor('select * from orders where customer_id = ?', [1]));
+
+        $this->assertNull($issues[0]->meta['rows_returned']);
+        $this->assertSame([], $analyzer->calls);
+    }
+
+    public function test_replays_are_capped_per_trace(): void
+    {
+        $analyzer = $this->analyzer(7);
+
+        $issues = $this->detectAnalyzed(
+            $analyzer,
+            ['explain_analyze_max' => 1],
+            [1],
+            ['select * from orders where region_id = ?', 'select * from orders where owner_id = ?'],
+        );
+
+        $this->assertCount(3, $issues);
+        $this->assertCount(1, $analyzer->calls);
+        $this->assertSame([7, null, null], array_map(fn (Issue $i) => $i->meta['rows_returned'], $issues));
+    }
+
+    public function test_incomplete_bindings_are_not_replayed(): void
+    {
+        foreach ([[], ['[redacted]'], ['[binary 12 bytes]'], [str_repeat('a', 200).'...']] as $bindings) {
+            $analyzer = $this->analyzer(41);
+
+            $issues = $this->detectAnalyzed($analyzer, [], $bindings);
+
+            $this->assertNull($issues[0]->meta['rows_returned']);
+            $this->assertSame([], $analyzer->calls);
+        }
+    }
+
+    public function test_a_failing_measurement_never_breaks_the_finding(): void
+    {
+        $issues = $this->detectAnalyzed($this->analyzer(new \RuntimeException('server gone')));
+
+        $this->assertCount(1, $issues);
+        $this->assertNull($issues[0]->meta['rows_returned']);
+    }
+
+    public function test_only_side_effect_free_selects_are_replayable(): void
+    {
+        $this->assertTrue(ExplainRunner::isReplayable('select * from orders where customer_id = ?'));
+        $this->assertTrue(ExplainRunner::isReplayable('(select id from a) union (select id from b)'));
+        foreach ([
+            'select * from orders where id = ? for update',
+            'select * from orders lock in share mode',
+            'select * from orders for share',
+            'select * into outfile "/tmp/x" from orders',
+            'select get_lock("a", 1)',
+            'select sleep(5)',
+            "select nextval('s')",
+            'select pg_advisory_lock(1)',
+            'update orders set a = 1',
+        ] as $sql) {
+            $this->assertFalse(ExplainRunner::isReplayable($sql), $sql);
+        }
+        $this->assertNull((new ExplainRunner)->rowsReturned('testing', 'select * from orders for update'));
     }
 
     public function test_catalog_failure_never_breaks_detection(): void

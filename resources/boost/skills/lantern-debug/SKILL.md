@@ -63,7 +63,7 @@ Schema::table('comments', function (Blueprint $t) {
 });
 ```
 
-Put equality columns first, then range/sort columns.
+Put equality columns first, then range/sort columns. Yes/no flags and other low-cardinality columns go last; an empty suggested column list means the filter alone would not help. `evidence.read_ratio` (rows read per row returned) appears only when the app runs with `LANTERN_EXPLAIN_ANALYZE=true`, which re-runs flagged queries once, time-limited; a high ratio means the plan, not a missing index, is the problem.
 
 ## index_not_chosen
 

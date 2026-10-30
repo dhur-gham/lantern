@@ -18,8 +18,11 @@ use Throwable;
  *
  * Safe by construction: only statements starting with SELECT are explained, never ANALYZE, and every failure
  * (unknown connection, driver, syntax, missing table) yields null instead of an exception.
+ *
+ * rowsReturned() is the one opt-in exception: it replays a SELECT under a time limit to count the rows it returns
+ * (see the `explain_analyze` config key), and only when the statement has no side effects.
  */
-final class ExplainRunner implements PlanSource
+final class ExplainRunner implements AnalyzeSource, PlanSource
 {
     public function __construct(private readonly ?DatabaseManager $db = null)
     {
@@ -76,6 +79,126 @@ final class ExplainRunner implements PlanSource
         $sql = ltrim($sql, " \t\n\r\0\x0B(");
 
         return stripos($sql, 'select') === 0 && ! str_contains(rtrim($sql, "; \n\r\t"), ';');
+    }
+
+    /** A SELECT that is safe to run a second time: no locks, no INTO targets, no functions with side effects. */
+    public static function isReplayable(string $sql): bool
+    {
+        return self::isSelect($sql) && preg_match(
+            '/\b(into|for\s+update|for\s+share|lock\s+in\s+share\s+mode|get_lock|release_lock|is_free_lock|sleep|benchmark|load_file|nextval|setval|lastval|set_config|pg_sleep|pg_advisory\w*|pg_terminate_backend|pg_cancel_backend|lo_import|lo_export|dblink\w*)\b/i',
+            $sql,
+        ) !== 1;
+    }
+
+    public function rowsReturned(?string $connectionName, string $sql, array $bindings = [], int $timeoutMs = 2000): ?int
+    {
+        try {
+            if (! self::isReplayable($sql)) {
+                return null;
+            }
+
+            $connection = ($this->db ?? app('db'))->connection($connectionName);
+            if (! $connection instanceof Connection) {
+                return null;
+            }
+
+            $timeoutMs = max(100, $timeoutMs);
+            $params = $this->params($connection, $sql, $bindings);
+            $pdo = $connection->getReadPdo();
+
+            return match ($connection->getDriverName()) {
+                'pgsql' => $this->pgsqlReturned($pdo, $sql, $params, $timeoutMs),
+                'mysql', 'mariadb' => str_contains((string) $pdo->getAttribute(\PDO::ATTR_SERVER_VERSION), 'MariaDB')
+                    ? $this->mariadbReturned($pdo, $sql, $params, $timeoutMs)
+                    : $this->mysqlReturned($pdo, $sql, $params, $timeoutMs),
+                default => null,
+            };
+        } catch (Throwable) {
+            return null;
+        }
+    }
+
+    /**
+     * EXPLAIN ANALYZE with a MAX_EXECUTION_TIME hint. MySQL ends an interrupted ANALYZE quietly instead of raising
+     * an error, and the numbers of an interrupted run are partial, so a run that used up the limit is discarded.
+     *
+     * @param  list<mixed>  $params
+     */
+    private function mysqlReturned(\PDO $pdo, string $sql, array $params, int $timeoutMs): ?int
+    {
+        $hinted = preg_replace('/^(\s*select)\b(?!\s*\/\*\+)/i', '$1 /*+ MAX_EXECUTION_TIME('.$timeoutMs.') */', $sql, 1, $count);
+        if ($count !== 1 || ! is_string($hinted)) {
+            return null; // parenthesised, or it already carries its own hints
+        }
+
+        $statement = $pdo->prepare('EXPLAIN ANALYZE '.$hinted);
+        $statement->execute($params);
+        $rows = $statement->fetchAll(\PDO::FETCH_ASSOC);
+        $statement->closeCursor();
+
+        $top = strtok((string) (array_values($rows[0] ?? [])[0] ?? ''), "\n");
+        if (! is_string($top) || preg_match('/\(actual time=[\d.e+-]+\.\.([\d.e+-]+) rows=([\d.e+-]+) loops=(\d+)\)/i', $top, $m) !== 1) {
+            return null;
+        }
+        // an interrupted run ends quietly, with a warning native prepared statements cannot show: the top node's
+        // own end time reaching the limit is the tell, and its row counts are partial
+        if ((float) $m[1] >= $timeoutMs * 0.9) {
+            return null;
+        }
+
+        return (int) round((float) $m[2] * (int) $m[3]);
+    }
+
+    /**
+     * MariaDB's ANALYZE FORMAT=JSON reports rows per table but not what the query returns, so the query is counted
+     * inside a derived table under a statement-scoped time limit. Duplicate column names (select * over a join)
+     * make the derived table invalid, which yields null.
+     *
+     * @param  list<mixed>  $params
+     */
+    private function mariadbReturned(\PDO $pdo, string $sql, array $params, int $timeoutMs): ?int
+    {
+        $limit = number_format($timeoutMs / 1000, 3, '.', '');
+        $statement = $pdo->prepare("SET STATEMENT max_statement_time={$limit} FOR SELECT COUNT(*) FROM (".rtrim($sql, "; \n\r\t").') AS lantern_rows');
+        $statement->execute($params);
+        $count = $statement->fetchColumn();
+        $statement->closeCursor();
+
+        return is_numeric($count) ? (int) $count : null;
+    }
+
+    /**
+     * EXPLAIN (ANALYZE) inside a read-only transaction with a local statement timeout, always rolled back.
+     *
+     * @param  list<mixed>  $params
+     */
+    private function pgsqlReturned(\PDO $pdo, string $sql, array $params, int $timeoutMs): ?int
+    {
+        if ($pdo->inTransaction()) {
+            return null; // never interfere with a transaction the application left open
+        }
+
+        $pdo->beginTransaction();
+        try {
+            $pdo->exec('SET TRANSACTION READ ONLY');
+            $pdo->exec('SET LOCAL statement_timeout = '.$timeoutMs);
+            $statement = $pdo->prepare('EXPLAIN (ANALYZE, FORMAT JSON) '.$sql);
+            $statement->execute($params);
+            $rows = $statement->fetchAll(\PDO::FETCH_ASSOC);
+        } finally {
+            try {
+                $pdo->rollBack();
+            } catch (Throwable) {
+                // the transaction already ended
+            }
+        }
+
+        $plan = json_decode((string) (array_values($rows[0] ?? [])[0] ?? '[]'), true)[0]['Plan'] ?? null;
+        if (! is_array($plan) || ! isset($plan['Actual Rows'])) {
+            return null;
+        }
+
+        return (int) round((float) $plan['Actual Rows'] * (float) ($plan['Actual Loops'] ?? 1));
     }
 
     /**

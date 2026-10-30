@@ -8,6 +8,7 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use Lantern\Console\InstallCommand;
 use Lantern\Schema\SchemaDiff;
 use Lantern\Schema\SchemaIntrospector;
 use Lantern\Schema\SchemaSnapshot;
@@ -155,5 +156,73 @@ final class SchemaMatrixTest extends MatrixTestCase
     private function withTickets(array $tables): array
     {
         return $tables + ['mx_tickets' => [['name' => 'PRIMARY', 'columns' => ['id'], 'unique' => true]]];
+    }
+
+    /**
+     * @param  array<string, mixed>  $options
+     * @return list<string>
+     */
+    private function installStatements(array $options): array
+    {
+        $this->app->make(\Illuminate\Contracts\Console\Kernel::class)->registerCommand($this->app->make(InstallCommand::class));
+        $code = Artisan::call('lantern:install', ['--sql' => true, '--connection' => self::driver()] + $options);
+        $output = Artisan::output();
+        $this->assertSame(0, $code, $output);
+
+        $sql = implode("\n", array_filter(explode("\n", $output), fn (string $l): bool => ! str_starts_with($l, '--')));
+
+        return array_values(array_filter(array_map('trim', explode(";\n", $sql." \n"))));
+    }
+
+    private function dropLanternTables(): void
+    {
+        foreach (['lantern_plan_samples', 'lantern_issues', 'lantern_traces'] as $table) {
+            Schema::dropIfExists($table);
+        }
+    }
+
+    public function test_install_sql_builds_the_schema_on_an_empty_database_and_touches_nothing_itself(): void
+    {
+        $this->dropLanternTables();
+        try {
+            $statements = $this->installStatements([]);
+            $this->assertFalse(Schema::hasTable('lantern_traces'), 'printing the SQL must not create anything');
+
+            foreach ($statements as $statement) {
+                DB::unprepared($statement);
+            }
+
+            $this->assertTrue(Schema::hasTable('lantern_traces'));
+            $this->assertTrue(Schema::hasTable('lantern_issues'));
+            $this->assertTrue(Schema::hasTable('lantern_plan_samples'));
+            $this->assertTrue(Schema::hasColumn('lantern_traces', 'app'));
+            $this->assertTrue(Schema::hasColumn('lantern_issues', 'app'));
+        } finally {
+            $this->dropLanternTables();
+        }
+    }
+
+    public function test_install_sql_since_0_4_upgrades_a_pre_0_4_database(): void
+    {
+        $this->dropLanternTables();
+        try {
+            $this->migrate('up', ['2024_01_01_000001_create_lantern_traces_table', '2024_01_01_000002_create_lantern_issues_table']);
+            $this->migrate('down', ['2024_01_01_000003_add_app_to_lantern_tables']);
+            $this->assertFalse(Schema::hasColumn('lantern_traces', 'app'));
+            $this->assertFalse(Schema::hasTable('lantern_plan_samples'));
+
+            $statements = $this->installStatements(['--since' => '0.4.0']);
+            $this->assertNotEmpty($statements);
+            foreach ($statements as $statement) {
+                $this->assertStringNotContainsStringIgnoringCase('create table '.($this->isPgsql() ? '"' : '`').'lantern_traces', $statement);
+                DB::unprepared($statement);
+            }
+
+            $this->assertTrue(Schema::hasColumn('lantern_traces', 'app'));
+            $this->assertTrue(Schema::hasColumn('lantern_issues', 'app'));
+            $this->assertTrue(Schema::hasTable('lantern_plan_samples'));
+        } finally {
+            $this->dropLanternTables();
+        }
     }
 }

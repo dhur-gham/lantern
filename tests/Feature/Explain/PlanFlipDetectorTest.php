@@ -25,22 +25,22 @@ final class PlanFlipDetectorTest extends QueryTestCase
     protected function setUp(): void
     {
         parent::setUp();
-        foreach (['000001_create_lantern_traces_table', '000002_create_lantern_issues_table', '000004_create_lantern_plan_samples_table'] as $file) {
+        foreach (['000001_create_lantern_traces_table', '000002_create_lantern_issues_table', '000004_create_lantern_plan_samples_table', '000005_add_sql_hash_to_lantern_plan_samples_table'] as $file) {
             (require dirname(__DIR__, 3).'/database/migrations/2024_01_01_'.$file.'.php')->up();
         }
     }
 
     /** @return array<string, mixed> */
-    private function config(bool $explain = true, string $driver = 'database'): array
+    private function config(bool $explain = true, string $driver = 'database', array $planFlip = []): array
     {
-        return ['explain' => $explain, 'storage' => ['driver' => $driver], 'thresholds' => ['slow_query_ms' => 100, 'n_plus_one_min_repeats' => 5]];
+        return ['explain' => $explain, 'storage' => ['driver' => $driver], 'plan_flip' => $planFlip, 'thresholds' => ['slow_query_ms' => 100, 'n_plus_one_min_repeats' => 5]];
     }
 
     private function detector(array $config = []): PlanFlipDetector
     {
         return new PlanFlipDetector($config ?: $this->config(), null, function (?string $connection, string $sql): array {
             $this->explains++;
-            $scan = substr_count($sql, '?') > $this->scanAbove;
+            $scan = substr_count($sql, '?') > $this->scanAbove && ! str_contains($sql, 'JOIN_ORDER');
 
             return [
                 'full_scan' => $scan,
@@ -54,7 +54,7 @@ final class PlanFlipDetectorTest extends QueryTestCase
     }
 
     /** @param list<array{0: int, 1: float}> $queries IN list length and execution time */
-    private function trace(array $queries, int $line = 10): Trace
+    private function trace(array $queries, int $line = 10, string $hint = ''): Trace
     {
         $recorder = $this->recorder();
         $recorder->reset();
@@ -62,7 +62,7 @@ final class PlanFlipDetectorTest extends QueryTestCase
         foreach ($queries as [$size, $ms]) {
             $now = hrtime(true);
             $recorder->recordClosed(SpanType::Query, 'q', $now, $now + (int) ($ms * 1_000_000), [
-                'sql' => 'select * from "order_items" where "merchant_id" in ('.implode(', ', array_fill(0, $size, '?')).')',
+                'sql' => 'select '.$hint.'* from "order_items" where "merchant_id" in ('.implode(', ', array_fill(0, $size, '?')).')',
                 'bindings' => [], 'fingerprint' => self::FP, 'connection' => 'testing',
                 'time_ms' => $ms, 'failed' => false, 'in_size' => $size,
             ], ['file' => 'app/Orders.php', 'line' => $line]);
@@ -197,6 +197,102 @@ final class PlanFlipDetectorTest extends QueryTestCase
             $many->detect($this->trace([[$size, 1.0]]));
         }
         $this->assertSame(64, DB::table('lantern_plan_samples')->where('shape', self::FP)->count());
+    }
+
+    public function test_adding_an_optimizer_hint_discards_the_old_samples_and_ends_the_flip(): void
+    {
+        $hint = '/*+ JOIN_ORDER(order_items, orders) */ ';
+        $detector = $this->detector();
+        $detector->detect($this->trace([[7, 66.0]]));
+        $this->assertCount(1, $detector->detect($this->trace([[41, 2900.0]])));
+        $before = $this->explains;
+
+        $this->assertSame([], $detector->detect($this->trace([[41, 150.0]], 10, $hint)), 'the old 7-value sample no longer counts');
+        $this->assertSame($before + 1, $this->explains, 'the hinted text is explained afresh');
+        $row = DB::table('lantern_plan_samples')->where('in_size', 41)->first();
+        $this->assertSame(1, (int) $row->samples);
+        $this->assertEqualsWithDelta(150.0, (float) $row->avg_ms, 0.001, 'old and new runs are not averaged together');
+        $this->assertSame('merchant_id_2', $row->plan_key);
+        $this->assertSame(1, $this->samples(), 'the 7-value sample from the unhinted text is gone');
+
+        $this->assertSame([], $detector->detect($this->trace([[7, 20.0]], 10, $hint)));
+        $this->assertSame(2, $this->samples());
+        $this->assertSame([], $detector->detect($this->trace([[41, 140.0]], 10, $hint)));
+    }
+
+    public function test_samples_without_a_hash_are_rewritten_once(): void
+    {
+        $old = ['samples' => 5, 'updated_at' => now(), 'explained_at' => now()];
+        DB::table('lantern_plan_samples')->insert([
+            ['shape' => self::FP, 'in_size' => 7, 'avg_ms' => 66.0, 'plan_table' => 'order_items', 'plan_key' => 'merchant_id_2', 'plan_rows' => 120, 'full_scan' => false] + $old,
+            ['shape' => self::FP, 'in_size' => 41, 'avg_ms' => 2900.0, 'plan_table' => 'orders', 'plan_key' => null, 'plan_rows' => 820_000, 'full_scan' => true] + $old,
+        ]);
+
+        $this->scanAbove = PHP_INT_MAX;
+        $detector = $this->detector();
+        $this->assertSame([], $detector->detect($this->trace([[7, 60.0]])));
+
+        $this->assertSame(1, $this->samples());
+        $row = DB::table('lantern_plan_samples')->first();
+        $this->assertNotNull($row->sql_hash);
+        $this->assertSame(1, (int) $row->samples);
+        $this->assertEqualsWithDelta(60.0, (float) $row->avg_ms, 0.001);
+
+        $detector->detect($this->trace([[7, 40.0]]));
+        $this->assertSame(1, $this->samples());
+        $this->assertSame(2, (int) DB::table('lantern_plan_samples')->value('samples'), 'a hashed sample is kept and averaged');
+    }
+
+    public function test_a_time_far_from_the_average_triggers_a_fresh_explain(): void
+    {
+        $this->scanAbove = PHP_INT_MAX;
+        $detector = $this->detector();
+        $detector->detect($this->trace([[41, 100.0]]));
+        $this->assertSame(1, $this->explains);
+
+        $detector->detect($this->trace([[41, 1000.0]]));
+        $this->assertSame(1, $this->explains, 'a fresh sample is not re-explained within the cooldown');
+
+        DB::table('lantern_plan_samples')->update(['explained_at' => now()->subMinutes(10), 'avg_ms' => 100, 'samples' => 1]);
+        $detector->detect($this->trace([[41, 110.0]]));
+        $this->assertSame(1, $this->explains, 'a time close to the average does not trigger');
+
+        $detector->detect($this->trace([[41, 1500.0]]));
+        $this->assertSame(2, $this->explains);
+
+        DB::table('lantern_plan_samples')->update(['explained_at' => now()->subMinutes(10)]);
+        $off = $this->detector($this->config(true, 'database', ['time_deviation' => 0]));
+        $off->detect($this->trace([[41, 5000.0]]));
+        $this->assertSame(2, $this->explains, 'time_deviation 0 turns the trigger off');
+    }
+
+    public function test_a_changed_plan_restarts_the_average(): void
+    {
+        $detector = $this->detector();
+        $detector->detect($this->trace([[41, 2900.0]]));
+        $detector->detect($this->trace([[41, 2900.0]]));
+        $this->assertSame(2, (int) DB::table('lantern_plan_samples')->value('samples'));
+
+        $this->scanAbove = PHP_INT_MAX;
+        DB::table('lantern_plan_samples')->update(['explained_at' => now()->subMinutes(90)]);
+        $detector->detect($this->trace([[41, 120.0]]));
+
+        $row = DB::table('lantern_plan_samples')->first();
+        $this->assertSame(1, (int) $row->samples);
+        $this->assertEqualsWithDelta(120.0, (float) $row->avg_ms, 0.001);
+        $this->assertSame('merchant_id_2', $row->plan_key);
+    }
+
+    public function test_store_keeps_working_before_the_hash_migration_has_run(): void
+    {
+        Schema::table('lantern_plan_samples', fn ($table) => $table->dropColumn('sql_hash'));
+
+        $detector = $this->detector();
+        $detector->detect($this->trace([[7, 66.0]]));
+        $issues = $detector->detect($this->trace([[41, 2900.0]]));
+
+        $this->assertCount(1, $issues);
+        $this->assertSame(2, $this->samples());
     }
 
     public function test_pruner_removes_old_samples(): void

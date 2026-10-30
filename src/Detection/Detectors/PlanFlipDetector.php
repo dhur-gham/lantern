@@ -19,8 +19,10 @@ use Lantern\Trace\Trace;
  * Flags a query shape whose plan changes, or whose cost outgrows its list, as the length of an `IN (...)` list grows.
  *
  * Each trace contributes one sample per shape and list size (average time, plus an EXPLAIN plan refreshed at most every
- * `plan_flip.refresh_minutes`). Samples persist in `lantern_plan_samples` with the database storage driver, so sizes
- * seen in different requests are compared; without it only sizes within the current trace are. Opt-in with `explain`.
+ * `plan_flip.refresh_minutes`, or sooner when the time moves `plan_flip.time_deviation` times away from the average).
+ * Samples persist in `lantern_plan_samples` with the database storage driver, so sizes seen in different requests are
+ * compared; without it only sizes within the current trace are. A sample belongs to the SQL text it was taken from:
+ * when the text changes (an optimizer hint, a rewritten condition) the old samples are discarded. Opt-in with `explain`.
  */
 final class PlanFlipDetector implements Detector
 {
@@ -64,11 +66,21 @@ final class PlanFlipDetector implements Detector
         $minMs = (float) ($options['min_ms'] ?? 10);
         $minRows = (int) ($options['min_rows'] ?? 1000);
         $refresh = (int) ($options['refresh_minutes'] ?? 60);
+        $deviation = (float) ($options['time_deviation'] ?? 4);
         $slowMs = (float) ($this->config['thresholds']['slow_query_ms'] ?? 100);
 
         $issues = [];
         $explains = 0;
         foreach ($groups as $fp => $buckets) {
+            $largestBy = [];
+            $hashes = [];
+            foreach ($buckets as $bucket => $bucketSpans) {
+                $largestBy[$bucket] = array_reduce($bucketSpans, fn (?Span $c, Span $s) => $c === null || $s->meta['in_size'] > $c->meta['in_size'] ? $s : $c);
+                $hashes[$bucket] = PlanSampleStore::sqlHash((string) $largestBy[$bucket]->meta['sql']);
+            }
+
+            $this->store()?->discardStale((string) $fp, array_values(array_unique($hashes)));
+
             $known = [];
             foreach ($this->store()?->samples((string) $fp) ?? [] as $sample) {
                 $known[$sample['in_size']] = $sample;
@@ -76,17 +88,17 @@ final class PlanFlipDetector implements Detector
 
             $spans = [];
             foreach ($buckets as $bucket => $bucketSpans) {
-                $largest = array_reduce($bucketSpans, fn (?Span $c, Span $s) => $c === null || $s->meta['in_size'] > $c->meta['in_size'] ? $s : $c);
+                $largest = $largestBy[$bucket];
                 $ms = array_sum(array_map(fn (Span $s) => (float) ($s->meta['time_ms'] ?? 0), $bucketSpans)) / count($bucketSpans);
                 $existing = $known[$bucket] ?? null;
 
                 $plan = null;
-                if ($explains < self::MAX_EXPLAINS && PlanSampleStore::needsExplain($existing, $refresh)) {
+                if ($explains < self::MAX_EXPLAINS && PlanSampleStore::needsExplain($existing, $refresh, $ms, $deviation, $minMs)) {
                     $explains++;
                     $plan = $this->plan($largest);
                 }
 
-                $this->store()?->record((string) $fp, (int) $bucket, $ms, $plan);
+                $this->store()?->record((string) $fp, (int) $bucket, $ms, $plan, $hashes[$bucket]);
                 $known[$bucket] = $this->merge($existing, (int) $bucket, $ms, $plan);
                 array_push($spans, ...$bucketSpans);
             }
@@ -143,13 +155,11 @@ final class PlanFlipDetector implements Detector
      */
     private function merge(?array $existing, int $size, float $ms, ?array $plan): array
     {
-        $n = min((int) ($existing['samples'] ?? 0), 50);
         $sample = $existing ?? ['table' => null, 'key' => null, 'rows' => null, 'full_scan' => false, 'explained_at' => null];
 
         return [
             'in_size' => $size,
-            'samples' => $n + 1,
-            'avg_ms' => ((float) ($existing['avg_ms'] ?? 0) * $n + $ms) / ($n + 1),
+            ...PlanSampleStore::fold($existing, $ms, $plan),
             'explained_at' => $plan !== null ? 'now' : $sample['explained_at'],
             'explained' => $plan !== null || ($existing['explained'] ?? false),
         ] + ($plan ?? $sample);
