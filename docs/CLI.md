@@ -157,6 +157,41 @@ php artisan lantern:run probes/export.php --diff=invoice-export
 php artisan lantern:issues --route='record:*' --format=json
 ```
 
+## lantern:login {surface?}
+
+Local-only way into the app for an agent or a developer: it creates the end state of a login (a session, a token, app credentials) without driving the login screen. Available only with `APP_ENV=local`, `LANTERN_ENABLED=true` and `lantern.access.enabled` on; otherwise the sign-in route does not exist and the command exits 2. Surfaces are defined under `lantern.access.surfaces` (see [Configuration](CONFIG.md#access)); `php artisan lantern:init` proposes them. It does not need database storage. It is not an MCP tool, because it mints credentials.
+
+Flags: `--user=` (id or email instead of the surface's default), `--to=` (session surfaces: relative path to open after signing in, for example `/admin/items/1/edit`; absolute URLs are refused), `--list`, `--revoke`, `--all` (with `--revoke`), `--format=json`, `--pretty`.
+
+Surface types:
+- `session`: prints a one-time link `/_lantern/access/{token}`. The link is valid for 5 minutes and works once; only a hash of the token is stored. Opening it signs the user in on the surface's guard, starts a fresh session, applies the surface's `session` values and redirects to `--to` (or the surface's `home`). It does not fire the `Login` event unless `lantern.access.fire_login_event` is on, because listeners may send mail or write audit rows. The route refuses requests carrying `X-Forwarded-*`, `Forwarded` or `X-Real-IP` headers, and unknown, used and expired links all answer 404.
+- `sanctum`: creates a short-lived Sanctum personal access token (`ttl_minutes`, default 30) and prints the headers to send.
+- `custom`: calls your class implementing `Lantern\Access\ProvidesCredentials` (`issue(array $subject)` returns headers, optional query parameters and an optional expiry; `revoke(array $issued)` deletes them) and prints what it returned.
+
+`APP_URL` must have a host; the link is built from it and checked against the host of the last request Lantern recorded (database storage). A mismatch exits 2 with the host to use, because the session cookie would not be sent to the other host. With no recorded request the link is printed with a `warning`.
+
+Schemas:
+- `lantern.login`: `surface`, `type`, `use`, `next`, and by type `url`, `expires_at`, `user {id label}` (session); `headers`, `expires_at`, `user` (sanctum); `headers`, `query`, `expires_at`, `subject` (custom). `warning` when `APP_URL` could not be checked.
+- `lantern.login.list` (`--list`): `surfaces[]` (`name type guard usable problem`), `issued[]` (`id surface type user expires_at expired used`), `cache_store`, `hint`.
+- `lantern.login.revoke` (`--revoke [surface]` or `--revoke --all`): `revoked` (count). Unused links are invalidated, sessions started by a link are destroyed, Sanctum tokens are deleted and custom credentials are passed to `revoke()`.
+
+Tokens and the list of what was issued live in the cache store (`lantern.access.cache_store`, default store). The `array` store loses them between processes, so use `file`, `redis` or `database`; `lantern:status` warns when it is `array`. Exit 0 ok, 2 for an unknown surface, a missing or unknown user, a bad `--to`, an `APP_URL` problem, or access not available.
+
+```
+php artisan lantern:login panel --to=/admin/items/1/edit
+php artisan lantern:login api
+php artisan lantern:login --list
+php artisan lantern:login --revoke --all
+```
+
+### Lantern::actingAs()
+
+`Lantern\Facades\Lantern::actingAs('panel')` signs a surface's user in for code running in the same process, from the same recipe, for example before `Livewire::test()` in a probe or a recorded block. Pass a second argument to choose the user. For a `custom` surface the credentials class must also implement `Lantern\Access\ProvidesUser` (`user(array $subject)`). Local only.
+
+## lantern:init
+
+Proposes surfaces for this app from `config/auth.php` and installed packages: a `session` surface for the first session guard (with a default user and, with Filament, the panel path as `home`), a `sanctum` surface when the user model uses `HasApiTokens`, and a `custom` skeleton for any guard Lantern cannot log into (nothing is guessed there). Prints JSON (`lantern.init`: `surfaces`, `php`, `notes`, `written`, `next`). `--write` saves them to `config/lantern-access.php` (an existing file needs `--force`), which Lantern merges into `lantern.access.surfaces`; the main config wins on a clash. Keep that file out of git if it names real accounts. Review the output: app-specific session keys (an active tenant, for example) are yours to fill in.
+
 ## lantern:schema-snapshot
 
 Capture the index layout of a database as JSON, to compare elsewhere. A local database often lacks indexes production has, so local EXPLAIN plans and timings can describe a plan production never uses. These two commands read the application's database, not Lantern storage, so they work with any `LANTERN_STORAGE_DRIVER`. Supported drivers: MySQL, MariaDB, PostgreSQL, SQLite.
@@ -190,6 +225,6 @@ Human-readable output, no JSON.
 
 - `lantern:install [--force] [--local]` publishes config and migrations; `--local` also writes `LANTERN_ENABLED=true`, `LANTERN_STORAGE_DRIVER=database` and `LANTERN_KEEP_RATE=1` to `.env`.
 - `lantern:install --sql [--connection=] [--since=]` prints the migration SQL for a connection's database driver instead of installing, so teams that apply schema changes by hand can review and run it. It touches nothing: plain SQL on stdout with a comment naming each migration, problems on stderr. `--since=0.4.0` keeps only the migrations first shipped in that version or later (what an upgrading install is missing); exit 2 on a bad `--since` or an unknown connection, 1 when a migration's SQL could not be generated. See [Upgrading](UPGRADING.md).
-- `lantern:status` prints enabled state, version, mode, storage driver, storage connection and app name (database driver), keep rate, Laravel and Livewire versions, and warns when traces would be missing (non-database storage, keep rate below 1 locally, enabled under `testing`) or could end up in the wrong database (`LANTERN_DB_CONNECTION` unset). `--json` prints `schema`, `enabled`, `version` and `migration_skip` (`null`, `tests-other-connection` or `connection-unverified`). A `connection-unverified` skip means a Lantern migration did nothing because its connection could not be checked, and status warns about it.
+- `lantern:status` prints enabled state, version, mode, storage driver, storage connection and app name (database driver), keep rate, Laravel and Livewire versions, and includes an `access` object (`available`, `surfaces`, `cache_store`, `warnings`) in `--json`, warns when traces would be missing (non-database storage, keep rate below 1 locally, enabled under `testing`) or could end up in the wrong database (`LANTERN_DB_CONNECTION` unset). `--json` prints `schema`, `enabled`, `version` and `migration_skip` (`null`, `tests-other-connection` or `connection-unverified`). A `connection-unverified` skip means a Lantern migration did nothing because its connection could not be checked, and status warns about it.
 - `lantern:prune [--days=] [--issues-days=] [--dry-run]` deletes traces and issues past retention (defaults `lantern.retention.days` 7 and `issues_days` 30) and prints the counts.
 - `lantern:trace:dump [--last]` prints the latest in-process trace or `storage/lantern/last-trace.json` (needs `LANTERN_DEBUG_WRITE_LAST_TRACE=true`); exits 1 when none is found.

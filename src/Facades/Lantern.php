@@ -10,6 +10,7 @@ use Lantern\Recording;
 
 /**
  * @method static mixed record(string $name, Closure $fn, array $context = [])
+ * @method static \Illuminate\Contracts\Auth\Authenticatable actingAs(string $surface, ?string $user = null)
  *
  * @see Recording
  */

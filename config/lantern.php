@@ -165,6 +165,18 @@ return [
     'domain' => env('LANTERN_DOMAIN'),
     'middleware' => ['web'],
 
+    // Local-only ways in for an agent or a developer (lantern:login, Lantern::actingAs). Surfaces describe how this
+    // app is entered: a session guard, Sanctum tokens, or credentials your app mints. See docs/CONFIG.md. Surfaces
+    // can also live in config/lantern-access.php (written by lantern:init --write), which is easy to keep out of git.
+    'access' => [
+        'enabled' => env('LANTERN_ACCESS', true),
+        // Cache store for one-time links and the list of what was issued (null = default store; not "array").
+        'cache_store' => env('LANTERN_ACCESS_CACHE_STORE'),
+        // Sign-in links skip the Login event by default: listeners may send mail or write audit rows.
+        'fire_login_event' => false,
+        'surfaces' => [],
+    ],
+
     'retention' => [
         'days' => (int) env('LANTERN_RETENTION_DAYS', 7),
         'issues_days' => (int) env('LANTERN_ISSUES_RETENTION_DAYS', 30),

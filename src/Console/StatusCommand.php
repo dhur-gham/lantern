@@ -29,6 +29,7 @@ class StatusCommand extends Command
                 'enabled' => $enabled,
                 'version' => LanternServiceProvider::VERSION,
                 'migration_skip' => $migrationSkip,
+                'access' => $this->access($enabled),
             ], JSON_UNESCAPED_SLASHES)."
 ", false, \Symfony\Component\Console\Output\OutputInterface::OUTPUT_RAW);
 
@@ -84,6 +85,14 @@ class StatusCommand extends Command
             $this->warn('Lantern is enabled under the testing environment; keep it off in phpunit.xml.');
         }
 
+        $access = $this->access($enabled);
+        if ($access['surfaces'] > 0) {
+            $this->line('Access: '.$access['surfaces'].' surface(s), cache store '.$access['cache_store']);
+        }
+        foreach ($access['warnings'] as $warning) {
+            $this->warn($warning);
+        }
+
         if ($migrationSkip === 'connection-unverified') {
             $this->warn('Lantern migrations were skipped because the storage connection could not be verified. Check lantern.storage.connection, then run php artisan migrate.');
         } elseif ($migrationSkip === 'tests-other-connection') {
@@ -91,6 +100,33 @@ class StatusCommand extends Command
         }
 
         return self::SUCCESS;
+    }
+
+    /** @return array{available: bool, surfaces: int, cache_store: string|null, warnings: list<string>} */
+    private function access(bool $enabled): array
+    {
+        $surfaces = count((array) config('lantern.access.surfaces', []));
+        $store = null;
+        $warnings = [];
+        if ($surfaces === 0) {
+            return ['available' => $enabled && \Lantern\Access\Access::available($this->laravel), 'surfaces' => 0, 'cache_store' => null, 'warnings' => []];
+        }
+
+        try {
+            $store = $this->laravel->make(\Lantern\Access\AccessTokens::class)->storeName();
+        } catch (\Throwable) {
+        }
+        if ($store === 'ArrayStore') {
+            $warnings[] = 'The access cache store is "array": sign-in links minted by lantern:login are lost before the browser opens them. Set LANTERN_ACCESS_CACHE_STORE (or CACHE_STORE) to file, redis or database.';
+        }
+        if ($enabled && \Lantern\Access\Access::available($this->laravel)) {
+            $url = (string) config('app.url');
+            if (parse_url($url, PHP_URL_HOST) === null) {
+                $warnings[] = 'APP_URL has no host ("'.$url.'"): lantern:login links would not open the right site. Set APP_URL to the address the browser uses.';
+            }
+        }
+
+        return ['available' => $enabled && \Lantern\Access\Access::available($this->laravel), 'surfaces' => $surfaces, 'cache_store' => $store, 'warnings' => $warnings];
     }
 
     private function isLoopbackUrl(string $url): bool

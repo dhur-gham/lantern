@@ -289,6 +289,7 @@ php artisan lantern:trace --path='api/otp/*' --summary   # latest trace matching
 php artisan lantern:issues --path='api/otp/*' --status=5xx   # issues whose latest trace matches
 php artisan lantern:match --sql="select ... where id = %s"   # code, issues and plan behind a production SQL
 php artisan lantern:run probes/export.php --repeat=5 # run a script locally; each Lantern::record() block becomes a trace (writes rolled back)
+php artisan lantern:login panel --to=/admin           # local only: one-time sign-in link (or token headers) for a browser or API
 php artisan lantern:diff <before> last               # resolved and new issues, query deltas
 php artisan lantern:check --route=/posts             # pass/fail gate
 php artisan lantern:status                           # state and detected framework versions
@@ -336,6 +337,8 @@ or in `.mcp.json`:
 ```json
 {"mcpServers":{"lantern":{"command":"php","args":["artisan","mcp:start","lantern"]}}}
 ```
+
+**Signing in locally.** `php artisan lantern:login <surface>` gives an agent a way into an authenticated app on a local copy: a one-time sign-in link for session guards, a short-lived Sanctum token, or credentials your app mints for a custom guard. It works only with `APP_ENV=local`, is not an MCP tool, and `lantern:init` proposes the surfaces. See [docs/CLI.md](docs/CLI.md#lanternlogin-surface) and [docs/CONFIG.md](docs/CONFIG.md#access).
 
 **Laravel Boost.** Lantern ships a Boost guideline and a `lantern-debug` skill with fix patterns for each issue type. Setup and a copy-paste snippet for your own `AGENTS.md` are in [docs/AGENTS_GUIDE.md](docs/AGENTS_GUIDE.md).
 

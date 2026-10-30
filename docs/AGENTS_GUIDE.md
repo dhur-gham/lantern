@@ -62,9 +62,17 @@ php artisan lantern:run probes/export.php --diff=invoice-export   # after the fi
 
 When the problem only shows up across several real requests (a login, a redirect, a Livewire flow), drive the app in a browser and read the traces afterwards with `lantern:issues --path=...` or `--route=...`.
 
-1. Log in through the application's own means (its login form or a local seeder), so the session is genuine.
-2. Playwright CLI using the installed Chrome as the driver: `playwright-cli open <url> --browser=chrome`; `state-save` and `state-load` keep the logged-in session between runs. Flags vary by version, so check `playwright-cli --help`.
-3. Alternative: Chrome DevTools MCP started with `--autoConnect`, which attaches to your own Chrome and inherits its cookies.
+1. Sign in with `php artisan lantern:login panel --to=/admin/items/1/edit` (local only; surfaces come from `php artisan lantern:init`, see below). It prints a one-time link (`url`, valid 5 minutes, works once); opening it gives the browser a genuine session without touching the login form.
+2. Open that `url` with Playwright CLI using the installed Chrome as the driver: `playwright-cli open <url> --browser=chrome`; then `state-save auth.json` keeps the logged-in session and `state-load auth.json` restores it in a later run (the link itself is spent). Flags vary by version, so check `playwright-cli --help`.
+3. Alternative: Chrome DevTools MCP started with `--autoConnect`, which attaches to your own Chrome; open the same `url` there.
+4. API surfaces: `php artisan lantern:login api` prints `headers` to send with each request (a short-lived Sanctum token, or credentials your app mints).
+5. When done: `php artisan lantern:login --revoke --all`. Unused links are invalidated, sessions the links started are destroyed, tokens are deleted.
+
+### Signing in
+
+`lantern:login` needs `APP_ENV=local`, Lantern enabled and `lantern.access.enabled`; elsewhere it exits 2 and the sign-in route does not exist. Run `php artisan lantern:init` to see proposed surfaces and `php artisan lantern:init --write` to save them to `config/lantern-access.php`; `php artisan lantern:login --list` shows which are usable and what is outstanding. Set `APP_URL` to the address the browser uses (the command exits 2 if its host differs from the last recorded request) and use a real cache store (`file`, `redis`, `database`), not `array`. Surface types are `session` (link), `sanctum` (token) and `custom` (a class in your app that implements `Lantern\Access\ProvidesCredentials`). It is not an MCP tool, because it mints credentials.
+
+For code in the same process, such as a probe or `Livewire::test()`, call `Lantern::actingAs('panel')` instead. Details: `docs/CLI.md`, `docs/CONFIG.md`.
 
 ## CI gate
 

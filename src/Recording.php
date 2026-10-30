@@ -70,6 +70,18 @@ final class Recording
         }
     }
 
+    /**
+     * Signs a surface's user in for code running in this process, from the same recipes lantern:login uses:
+     * `Lantern::actingAs('panel')` before `Livewire::test(...)` or a service call. Local only.
+     */
+    public function actingAs(string $surface, ?string $user = null): \Illuminate\Contracts\Auth\Authenticatable
+    {
+        $access = $this->app->make(Access\Access::class);
+        $access->requireAvailable();
+
+        return $access->actingAs($surface, $user);
+    }
+
     /** Summaries of the traces recorded in this process, oldest first. @return list<array<string, mixed>> */
     public function finished(): array
     {

@@ -13,6 +13,7 @@
     },
     "require-dev": {
         "laravel/mcp": "^1.1",
+        "laravel/sanctum": "^4.3",
         "livewire/livewire": "^3.5 || ^4.0",
         "orchestra/testbench": "^9.0|^10.0",
         "phpunit/phpunit": "^10.5|^11.0"
