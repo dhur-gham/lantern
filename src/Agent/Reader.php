@@ -136,7 +136,7 @@ final class Reader
      * @param array<string, mixed> $meta
      * @return array<string, mixed>
      */
-    private static function planEvidence(array $meta): array
+    public static function planEvidence(array $meta): array
     {
         $out = [];
         if (isset($meta['rows_read']) && is_numeric($meta['rows_read'])) {

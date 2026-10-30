@@ -116,7 +116,9 @@ final class TraceQueries
      * `path_is`, `route_is` and `status` narrow to issues whose latest trace matches; `app` as for traces. Resolved
      * issues are hidden unless `resolved` is `include` (both) or `only`.
      *
-     * @param array{type?: mixed, severity?: mixed, sort?: mixed, path_is?: mixed, route_is?: mixed, status?: mixed, app?: mixed, resolved?: mixed} $filters
+     * `keys` narrows to those issue ids.
+     *
+     * @param array{type?: mixed, severity?: mixed, sort?: mixed, path_is?: mixed, route_is?: mixed, status?: mixed, app?: mixed, resolved?: mixed, keys?: mixed} $filters
      * @return list<array<string, mixed>>
      */
     public function issues(array $filters = [], int $limit = 50): array
@@ -139,6 +141,9 @@ final class TraceQueries
             }
             if (($filters['severity'] ?? '') !== '') {
                 $q->where('severity', (string) $filters['severity']);
+            }
+            if (is_array($filters['keys'] ?? null)) {
+                $q->whereIn('issue_key', array_slice(array_map('strval', array_values($filters['keys'])), 0, 500));
             }
             $viaTrace = array_intersect_key($filters, array_flip(['path_is', 'route_is', 'status']));
             if (array_filter($viaTrace, fn ($v) => $v !== null && $v !== '') !== []) {
