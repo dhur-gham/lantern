@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace Lantern\Instrumentation\Query;
 
-use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Container\Container;
+use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Database\Connection;
 use Illuminate\Database\Events\ConnectionEstablished;
 use Illuminate\Database\Events\QueryExecuted;
@@ -23,6 +23,7 @@ use Lantern\Query\CallSiteResolver;
 use Lantern\Query\Fingerprinter;
 use Lantern\Query\InListSize;
 use Lantern\Trace\Recorder;
+use Lantern\Trace\Span;
 use Lantern\Trace\SpanType;
 use Throwable;
 use WeakMap;
@@ -51,7 +52,7 @@ final class QueryInstrumentation
 
     private ?string $keptTrace = null;
 
-    /** @var array<string, array{0: \WeakReference<\Lantern\Trace\Span>, 1: float}> shapes whose raw bindings are held in the current trace, with the span and its time */
+    /** @var array<string, array{0: \WeakReference<Span>, 1: float}> shapes whose raw bindings are held in the current trace, with the span and its time */
     private array $kept = [];
 
     /** @var WeakMap<Connection, true> */
@@ -71,7 +72,7 @@ final class QueryInstrumentation
     /** @var array<string, int> fingerprint => executions seen in the current trace (lazy mode) */
     private array $seen = [];
 
-    /** @var array<string, list<\Lantern\Trace\Span>> spans recorded without a call site, per fingerprint */
+    /** @var array<string, list<Span>> spans recorded without a call site, per fingerprint */
     private array $early = [];
 
     public function __construct(private readonly Application $app)
@@ -117,6 +118,12 @@ final class QueryInstrumentation
 
     private function before(string $query, array $bindings, Connection $connection): void
     {
+        // A suspended query can run inside the hook of another one (a lantern:scenario check reads a table before a
+        // write): it must not touch that query's slot.
+        if (QuerySuspend::active()) {
+            return;
+        }
+
         // A slot still here means the previous query on this connection never reported success.
         $this->failPending($connection);
 
@@ -137,6 +144,10 @@ final class QueryInstrumentation
     private function executed(QueryExecuted $event): void
     {
         $connection = $event->connection;
+        if (QuerySuspend::active()) {
+            return;
+        }
+
         $recorder = $this->recorder();
         if (! $recorder->isActive() || $this->ignoredConnection($connection)) {
             unset($this->pending[$connection]);
@@ -327,7 +338,7 @@ final class QueryInstrumentation
      *
      * @param  array<int|string, mixed>  $bindings
      */
-    private function keepRawBindings(\Lantern\Trace\Span $span, Recorder $recorder, string $sql, string $fingerprint, array $bindings, float $ms = 0.0): void
+    private function keepRawBindings(Span $span, Recorder $recorder, string $sql, string $fingerprint, array $bindings, float $ms = 0.0): void
     {
         if (! $this->config('explain', false) || ! $this->config('explain_analyze', false) || ! ExplainRunner::isSelect($sql)) {
             return;
@@ -385,7 +396,7 @@ final class QueryInstrumentation
     /**
      * Lazy mode: resolve only for slow queries or once a fingerprint repeats enough to be an N+1 candidate.
      *
-     * @return array{0: ?array<string, mixed>, 1: list<\Lantern\Trace\Span>, 2: bool} site, earlier spans to backfill, whether to track this span
+     * @return array{0: ?array<string, mixed>, 1: list<Span>, 2: bool} site, earlier spans to backfill, whether to track this span
      */
     private function lazySite(Recorder $recorder, string $fingerprint, float $ms): array
     {
@@ -455,7 +466,7 @@ final class QueryInstrumentation
 
         try {
             return $this->config('mode', 'dev') === 'dev' && app()->environment('local');
-        } catch (\Throwable) {
+        } catch (Throwable) {
             return false;
         }
     }

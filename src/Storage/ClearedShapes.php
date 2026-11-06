@@ -41,7 +41,7 @@ final class ClearedShapes
     }
 
     /**
-     * @param array<string, mixed> $config full config('lantern')
+     * @param  array<string, mixed>  $config  full config('lantern')
      * @return array<string, array{in_size: int, sql_hashes: list<string>}> issue shape (Findings::shape) => the largest IN list this trace ran for it and the SQL hashes it ran, for shapes that did not recur
      */
     public static function candidates(Trace $trace, array $config): array

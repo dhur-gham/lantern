@@ -11,8 +11,8 @@ namespace Lantern\Schema;
 final class SchemaDiff
 {
     /**
-     * @param array<string, list<array{name: string, columns: list<string>, unique: bool}>> $production
-     * @param array<string, list<array{name: string, columns: list<string>, unique: bool}>> $local
+     * @param  array<string, list<array{name: string, columns: list<string>, unique: bool}>>  $production
+     * @param  array<string, list<array{name: string, columns: list<string>, unique: bool}>>  $local
      * @return array{tables_missing_locally: list<string>, missing_locally: list<array<string, mixed>>, extra_locally: list<array<string, mixed>>}
      */
     public static function compare(array $production, array $local): array
@@ -45,7 +45,7 @@ final class SchemaDiff
     }
 
     /**
-     * @param list<array{name: string, columns: list<string>, unique: bool}> $indexes
+     * @param  list<array{name: string, columns: list<string>, unique: bool}>  $indexes
      * @return array<string, true>
      */
     private static function signatures(array $indexes): array

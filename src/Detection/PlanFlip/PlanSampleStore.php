@@ -26,9 +26,7 @@ final class PlanSampleStore
 
     private ?bool $hashed = null;
 
-    public function __construct(private readonly ?string $connection = null)
-    {
-    }
+    public function __construct(private readonly ?string $connection = null) {}
 
     /** @param array<string, mixed> $config full config('lantern') */
     public static function fromConfig(array $config): ?self
@@ -78,7 +76,7 @@ final class PlanSampleStore
      * Drops samples taken from a different SQL text than the one running now (and pre-hash rows, once), so a fixed query
      * is not judged by the plan and timings of its old text.
      *
-     * @param list<string> $hashes raw-SQL hashes seen for this shape in the current trace
+     * @param  list<string>  $hashes  raw-SQL hashes seen for this shape in the current trace
      */
     public function discardStale(string $shape, array $hashes): void
     {
@@ -123,8 +121,8 @@ final class PlanSampleStore
      * The running average after one more execution. A re-EXPLAIN that finds a different plan starts the average over:
      * time measured under the old plan says nothing about the new one.
      *
-     * @param array<string, mixed>|null $existing the stored sample
-     * @param array{table: ?string, key: ?string, rows: ?int, full_scan: bool}|null $plan
+     * @param  array<string, mixed>|null  $existing  the stored sample
+     * @param  array{table: ?string, key: ?string, rows: ?int, full_scan: bool}|null  $plan
      * @return array{samples: int, avg_ms: float}
      */
     public static function fold(?array $existing, float $ms, ?array $plan): array
@@ -139,8 +137,8 @@ final class PlanSampleStore
     }
 
     /**
-     * @param array<string, mixed>|null $sample the stored sample for this shape and size
-     * @param float|null $ms the time measured now; with $deviation it re-EXPLAINs a sample whose time moved far from its average
+     * @param  array<string, mixed>|null  $sample  the stored sample for this shape and size
+     * @param  float|null  $ms  the time measured now; with $deviation it re-EXPLAINs a sample whose time moved far from its average
      */
     public static function needsExplain(?array $sample, int $refreshMinutes, ?float $ms = null, float $deviation = 0.0, float $minMs = 0.0): bool
     {
@@ -166,7 +164,7 @@ final class PlanSampleStore
     }
 
     /**
-     * @param array<string, mixed> $row
+     * @param  array<string, mixed>  $row
      * @return array<string, mixed>
      */
     private static function sample(array $row): array
@@ -186,8 +184,8 @@ final class PlanSampleStore
     }
 
     /**
-     * @param array<string, mixed> $sample
-     * @param array{table: ?string, key: ?string, rows: ?int, full_scan: bool} $plan
+     * @param  array<string, mixed>  $sample
+     * @param  array{table: ?string, key: ?string, rows: ?int, full_scan: bool}  $plan
      */
     private static function planChanged(array $sample, array $plan): bool
     {
@@ -197,7 +195,7 @@ final class PlanSampleStore
     }
 
     /**
-     * @param array{table: ?string, key: ?string, rows: ?int, full_scan: bool}|null $plan
+     * @param  array{table: ?string, key: ?string, rows: ?int, full_scan: bool}|null  $plan
      * @return array<string, mixed>
      */
     private static function planColumns(?array $plan, Carbon $now): array

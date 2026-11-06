@@ -10,7 +10,7 @@ Lantern gives agents machine-readable performance findings and a way to prove a 
 
 ## The loop
 
-1. Reproduce the slow request (feature test or real request). Seed at least 3 related rows or N+1 will not appear.
+1. Reproduce the slow request: a feature test, a real request, or, for a Livewire interaction or an API call, a scenario file (`lantern:scenario`, below). Seed at least 3 related rows or N+1 will not appear.
 2. `php artisan lantern:issues --format=json --limit=10`. Each issue has a stable `id`, `type`, `severity` and `call_site.file`/`line`.
 3. `php artisan lantern:issue {id} --format=json`. `evidence.trace_id` is the BEFORE trace; `evidence.sql_shape` is the normalized SQL.
 4. Fix the call site (eager load, index, `select()`, chunking).
@@ -57,6 +57,45 @@ php artisan lantern:run probes/export.php --diff=invoice-export   # after the fi
 `lantern:run` works only with `APP_ENV=local`, turns Lantern on for that process, and rolls the script's database writes back unless you pass `--commit`. Extra `--key=value` options arrive in `$args`. `--repeat=N` adds a median summary per record name. It is not available over MCP because it executes code. Details: `docs/CLI.md`.
 
 `Lantern::record()` can also stay in application code: it is a plain call when Lantern is off, and inside a request, job or command it adds a span and keeps that trace.
+
+### Scenarios: repeat an interaction without a browser or PHP
+
+When the slow thing is server work (a Filament table, a Livewire action, an API call), describe it as data and run it in the current process: no browser, no web server, no sign-in link, nothing to write in PHP. Put the file in `lantern/scenarios/` (or set `lantern.scenarios.path`), for example `lantern/scenarios/orders-page.json`:
+
+```json
+{
+  "name": "orders-page",
+  "surface": "panel",
+  "session": {"current_merchant_id": 222},
+  "fake": ["queue", "mail", "notification", "http"],
+  "steps": [
+    { "livewire": "App\\Filament\\Resources\\OrderResource\\Pages\\ListOrders",
+      "do": [ {"set": "tableSearch", "value": "10023"}, {"call": "gotoPage", "args": [2, "page"]} ] },
+    { "request": "GET", "path": "/api/orders/list-orders", "query": {"type": "all"},
+      "headers": {"mr-id": "222"}, "as": {"surface": "api"}, "expect": 200 }
+  ]
+}
+```
+
+```bash
+php artisan lantern:scenario list                                         # the files, and whether each is valid
+php artisan lantern:scenario run orders-page --repeat=5 --format=json     # one trace per step, medians in `summary`
+php artisan lantern:issues --route='record:orders-page*' --format=json    # what the run triggered
+# fix the code, then run the same scenario against the BEFORE trace of one step
+php artisan lantern:scenario run orders-page --diff='orders-page:01:mount' --format=json
+```
+
+- **Output** is the `lantern.run` JSON of `lantern:run` plus a `scenario` block (`name`, `file`, `steps`, `faked`, `warnings`). Traces are named `<scenario>:<step>:<what>` (`orders-page:01:call gotoPage`), so `--diff` compares the same step before and after.
+- **Signing in.** `surface` (or `as` on a request step) names a surface from `lantern:init`; credentials never go in the file (a header with `auth`, `token`, `secret`, `api-key`, `password`, `cookie`, `csrf`, `xsrf`, `session` or `credential` in its name is refused, and nothing secret belongs in any other part of the file either). Each step starts signed out with an empty session; `session` values are set before the step.
+- **A response of 400 or above fails the run** (exit 1, with the status and the start of the body), so an error page is never measured by accident. Use `"expect": <status>` when it is intended. The app's own rate limiter applies, so a run longer than its limit gets a 429 and fails: keep one run under it, or set `"throttle": false` (or `lantern.scenarios.throttle`) to take Laravel's `throttle:` middleware out of the run. Use that only for a run longer than the limit: keep the limit on when you are investigating login, OTP, 429s or rate limiting itself, or when the cache store is the database (the limiter's queries would be missing from the counts), and compare a before and after with the same throttle setting. `scenario.throttle_skipped` says how many times it was skipped (0 = the switch changed nothing).
+- **The rollback is checked.** After the run, every table it wrote to is read again and compared with what it was before (row count and a checksum of the contents; a table too big for the checksum gets row counts only): `scenario.rollback_check` has `ok`, `checked`, `problems` and `unattributed`, and a table that differs or cannot be read, or a statement that commits implicitly (`CREATE`, `ALTER`, `DROP`, `TRUNCATE`), fails the run. Writes it could not attribute to a table are listed in `unattributed`, with a warning. Skipped with `--commit`.
+- **Rollback covers the database only,** on every connection, unless you pass `--commit`. Queued jobs, mail, notifications and calls to other services that a write request triggers really happen, unless you list them in `fake` (`queue`, `bus`, `mail`, `notification`, `http`, `storage`; also `lantern.scenarios.fake` for every scenario). A scenario that uploads files should fake `storage`: it points every non-local disk (S3, FTP...) at a local folder, so nothing is written to a remote bucket (local disks stay real, and what a step writes there stays). The output warns, naming the channels among `queue`, `mail`, `notification`, `http` (and `storage` when files are uploaded) that are still real, when write requests or Livewire actions ran without them faked.
+- **Limits:** a file is at most 2 MB, a scenario 500 steps, a `livewire` step 200 `do` items. Unknown keys are refused, so a typo fails instead of being skipped.
+- **Uploads:** a Livewire step can `upload` into a property, and a POST request can send `files` with `form` fields, using generated files: `{"upload": "photo", "file": {"name": "photo.jpg", "width": 2550, "height": 2550, "kb": 3500}}`. Images are real pictures of that size, `kb` is what validation sees, a plain file (`"kind": "file"`) is empty. At most 10 files, 10 MB and 4,000 pixels per side each.
+- **Real token:** `"as": {"surface": "api", "via": "token"}` sends a real Sanctum token (deleted after the step) so token lookup runs as for an API client; without `via` a step is signed in directly and shows about 3 queries fewer than over HTTP.
+- **Not reproduced:** Alpine and other browser JavaScript (requests it fires, `wire:poll`), Livewire's browser uploader round trips, and what is inside an uploaded file. Use the browser flow below for those.
+- **Exit codes:** 0 ok, 1 a step failed (the traces recorded so far are kept), 2 bad file, unknown surface or not `APP_ENV=local`.
+- It is not an MCP tool, because it executes application code. Details: `docs/CLI.md`.
 
 ### Real request chains in a browser
 
@@ -130,6 +169,7 @@ Use Lantern when a request is slow or runs many queries. Enable locally with `LA
 - Verify after editing: `php artisan lantern:diff {before} last` then `php artisan lantern:check --route=<route> --no-new-issues` (exit 0 = fixed, 1 = still failing, 3 = no data).
 - Fix the query (eager load, index, select columns); never ignore an issue or raise a threshold to pass.
 - Seed at least 3 related rows when reproducing. Bindings are redacted; do not try to recover them.
+- To repeat a Livewire interaction or an API call without a browser, write `lantern/scenarios/<name>.json` and run `php artisan lantern:scenario run <name> --repeat=5 --format=json` (local only, rolled back, fails on a 400+ response; add `"fake": ["queue", "mail", "notification", "http"]` for write requests). Compare with `--diff='<name>:01:<what>'`.
 ```
 
 ## Safety

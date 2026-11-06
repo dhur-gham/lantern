@@ -50,8 +50,8 @@ final class TraceFormatter
     }
 
     /**
-     * @param array<string, mixed> $node
-     * @param list<string> $lines
+     * @param  array<string, mixed>  $node
+     * @param  list<string>  $lines
      */
     private static function node(array $node, int $depth, array &$lines): void
     {

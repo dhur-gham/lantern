@@ -6,11 +6,11 @@ namespace Lantern\Mcp\Tools;
 
 use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Support\Facades\Artisan;
+use Lantern\Agent\Commands;
 use Laravel\Mcp\Request;
 use Laravel\Mcp\Response;
 use Laravel\Mcp\ResponseFactory;
 use Laravel\Mcp\Server\Tool;
-use Lantern\Agent\Commands;
 
 /**
  * Thin wrapper over the lantern:* CLI commands so MCP and CLI share one code path and one JSON schema.
@@ -23,7 +23,7 @@ abstract class LanternTool extends Tool
     abstract protected function rules(): array;
 
     /**
-     * @param array<string, mixed> $input
+     * @param  array<string, mixed>  $input
      * @return array<string, mixed>
      */
     abstract protected function parameters(array $input): array;
@@ -50,7 +50,7 @@ abstract class LanternTool extends Tool
     /**
      * Hints and `next` are written for the CLI; point them at the matching MCP tool instead.
      *
-     * @param array<string, mixed> $payload
+     * @param  array<string, mixed>  $payload
      * @return array<string, mixed>
      */
     private static function asToolHints(array $payload): array
@@ -94,8 +94,8 @@ abstract class LanternTool extends Tool
     }
 
     /**
-     * @param array<string, mixed> $input
-     * @param array<string, string> $map input key => cli option
+     * @param  array<string, mixed>  $input
+     * @param  array<string, string>  $map  input key => cli option
      * @return array<string, mixed>
      */
     protected function options(array $input, array $map): array

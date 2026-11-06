@@ -88,7 +88,7 @@ final class ProbeCommand extends AgentCommand
     }
 
     /**
-     * @param array<string, mixed> $trace
+     * @param  array<string, mixed>  $trace
      * @return array{0: string, 1: array<int|string, mixed>, 2: ?string}
      */
     private function query(array $trace, string $issueKey): array
@@ -113,8 +113,8 @@ final class ProbeCommand extends AgentCommand
     }
 
     /**
-     * @param array<string, mixed>|null $node
-     * @param list<int> $ids
+     * @param  array<string, mixed>|null  $node
+     * @param  list<int>  $ids
      * @return array<string, mixed>|null
      */
     private function node(?array $node, array $ids): ?array

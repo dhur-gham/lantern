@@ -47,8 +47,7 @@ final class MissingIndexDetector implements Detector
         private readonly ?PlanSource $runner = null,
         private readonly ?Catalog $catalog = null,
         private readonly ?AnalyzeSource $analyzer = null,
-    ) {
-    }
+    ) {}
 
     public function detect(Trace $trace): array
     {
@@ -502,7 +501,7 @@ final class MissingIndexDetector implements Detector
      * leads no index has none), fall back to the column's name and its type: a flag-like name, or a type that holds
      * only a handful of values (tinyint, bit, boolean, a short enum).
      *
-     * @param array{type: ?string, distinct: ?int}|null $info
+     * @param  array{type: ?string, distinct: ?int}|null  $info
      */
     private function lowCardinality(string $column, ?array $info, int $limit): bool
     {

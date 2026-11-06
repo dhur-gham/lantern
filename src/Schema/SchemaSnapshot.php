@@ -16,8 +16,8 @@ final class SchemaSnapshot
     public const SCHEMA = 'lantern.schema-snapshot';
 
     /**
-     * @param array<string, list<array{name: string, columns: list<string>, unique: bool}>> $tables
-     * @param array<string, int> $rowCounts
+     * @param  array<string, list<array{name: string, columns: list<string>, unique: bool}>>  $tables
+     * @param  array<string, int>  $rowCounts
      */
     public function __construct(
         public readonly string $driver,
@@ -25,8 +25,7 @@ final class SchemaSnapshot
         public readonly ?string $capturedAt,
         public readonly array $tables,
         public readonly array $rowCounts = [],
-    ) {
-    }
+    ) {}
 
     /** @return array<string, mixed> */
     public function toArray(): array

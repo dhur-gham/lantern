@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Lantern\Detection;
 
+use Lantern\Trace\SpanType;
 use Lantern\Trace\Trace;
 use Throwable;
 
@@ -13,8 +14,8 @@ final class Analyzer
     private array $detectors = [];
 
     /**
-     * @param array<string, mixed> $config
-     * @param list<Detector>|null $detectors
+     * @param  array<string, mixed>  $config
+     * @param  list<Detector>|null  $detectors
      */
     public function __construct(private readonly array $config, ?array $detectors = null)
     {
@@ -69,7 +70,7 @@ final class Analyzer
      * A lazy_load issue and an n_plus_one issue describing the same loop (same call site, and the lazy-load events are
      * immediately followed by the N+1 query spans) become one issue: the n_plus_one numbers plus the model/relation.
      *
-     * @param list<Issue> $issues
+     * @param  list<Issue>  $issues
      * @return list<Issue>
      */
     private function mergeLazyLoads(array $issues, Trace $trace): array
@@ -93,7 +94,7 @@ final class Analyzer
             foreach ($l->spanIds as $id) {
                 for ($j = ($position[$id] ?? count($ordered)) + 1, $n = count($ordered); $j < $n; $j++) {
                     $s = $ordered[$j];
-                    if ($s->type === \Lantern\Trace\SpanType::Query && ($s->meta['kind'] ?? null) !== 'transaction') {
+                    if ($s->type === SpanType::Query && ($s->meta['kind'] ?? null) !== 'transaction') {
                         $next[$s->id] = true;
                         break;
                     }
@@ -155,7 +156,7 @@ final class Analyzer
      * A duplicate_query whose spans all belong to an n_plus_one issue is the same problem seen twice (the loop
      * happened to repeat a parameter), so only the N+1 is kept.
      *
-     * @param list<Issue> $issues
+     * @param  list<Issue>  $issues
      * @return list<Issue>
      */
     private function dropCoveredDuplicates(array $issues): array
@@ -184,8 +185,8 @@ final class Analyzer
     }
 
     /**
-     * @param array{file: string, line: int}|null $a
-     * @param array{file: string, line: int}|null $b
+     * @param  array{file: string, line: int}|null  $a
+     * @param  array{file: string, line: int}|null  $b
      */
     private function sameSite(?array $a, ?array $b): bool
     {

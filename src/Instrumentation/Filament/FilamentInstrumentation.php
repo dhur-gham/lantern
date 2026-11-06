@@ -132,8 +132,8 @@ final class FilamentInstrumentation
      * A query fired from a model accessor (e.g. Post::latestCommentExcerpt) is matched to the table column of
      * the same snake_case name in the resources that rendered.
      *
-     * @param array{file: string, line: int, function?: string} $callSite
-     * @param list<string> $resources
+     * @param  array{file: string, line: int, function?: string}  $callSite
+     * @param  list<string>  $resources
      * @return array<string, mixed>|null
      */
     private function accessorInfo(array $callSite, array $resources, string $base, ColumnLocator $locator): ?array

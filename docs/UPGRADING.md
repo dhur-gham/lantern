@@ -6,6 +6,12 @@ Lantern loads its migrations from the package, so `php artisan migrate` is enoug
 
 If your team applies schema changes by hand, print the SQL instead of migrating (see [Applying the schema by hand](#applying-the-schema-by-hand)).
 
+## 1.0.0
+
+**No schema change.** `lantern:scenario` is new; nothing else changes for existing installs. To use it, put scenario files in `lantern/scenarios/` (or set `LANTERN_SCENARIOS_PATH`). Keep the folder out of git if your app does not commit Lantern files.
+
+New config keys, all optional (`lantern.scenarios.throttle`, `lantern.scenarios.verify_rollback`): without a published config they take their defaults. A published `config/lantern.php` from before keeps working; add the keys if you want to change them. Scenarios now read back every table they wrote to after the rollback; a run that leaves a table different (or runs DDL) fails with exit 1, so a scenario that used to pass because nothing checked it can now fail, which is the point.
+
 ## 0.7.1
 
 **No schema change.** Nothing to migrate.

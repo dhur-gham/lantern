@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 namespace Lantern\Instrumentation\Query;
 
-use Throwable;
-
 /** While active, query instrumentation ignores every query (used by Lantern's own storage writes). */
 final class QuerySuspend
 {

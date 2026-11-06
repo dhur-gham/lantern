@@ -19,7 +19,7 @@ final class Redactor
     }
 
     /**
-     * @param array<int|string, mixed> $bindings
+     * @param  array<int|string, mixed>  $bindings
      * @return array<int|string, mixed>
      */
     public static function bindings(array $bindings, bool $reveal = false): array

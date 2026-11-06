@@ -9,6 +9,7 @@ use Illuminate\Routing\Contracts\ControllerDispatcher;
 use Illuminate\Routing\Route;
 use Lantern\Trace\Recorder;
 use Lantern\Trace\SpanType;
+use Livewire\Component;
 use ReflectionClass;
 use ReflectionMethod;
 
@@ -25,7 +26,7 @@ final class TimedControllerDispatcher implements ControllerDispatcher
             return $this->inner->dispatch($route, $controller, $method);
         }
 
-        $component = $controller instanceof \Livewire\Component;
+        $component = $controller instanceof Component;
         $span = $recorder->start(SpanType::Controller, get_class($controller).($component ? '' : '@'.$method));
 
         try {

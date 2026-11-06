@@ -9,7 +9,6 @@ use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Contracts\Http\Kernel as HttpKernel;
 use Illuminate\Foundation\Configuration\Middleware as MiddlewareConfig;
 use Illuminate\Routing\Events\RouteMatched;
-use Illuminate\Routing\Router;
 use Throwable;
 use WeakMap;
 

@@ -15,7 +15,7 @@ final class SchemaIntrospector
     /**
      * Indexes of the requested tables (all tables when null). Tables that do not exist are left out.
      *
-     * @param list<string>|null $tables
+     * @param  list<string>|null  $tables
      * @return array<string, list<array{name: string, columns: list<string>, unique: bool}>>
      */
     public function capture(Connection $connection, ?array $tables = null): array

@@ -29,9 +29,9 @@ final class Issue
     public const SEV_CRITICAL = 'critical';
 
     /**
-     * @param array{file: string, line: int, function?: string}|null $callSite
-     * @param list<int> $spanIds
-     * @param array<string, mixed> $meta
+     * @param  array{file: string, line: int, function?: string}|null  $callSite
+     * @param  list<int>  $spanIds
+     * @param  array<string, mixed>  $meta
      */
     public function __construct(
         public string $type,
@@ -44,8 +44,7 @@ final class Issue
         public array $spanIds,
         public array $meta = [],
         public ?string $suggestion = null,
-    ) {
-    }
+    ) {}
 
     public static function key(string $type, string ...$parts): string
     {

@@ -7,6 +7,7 @@ namespace Lantern\Storage;
 use Illuminate\Database\Connection;
 use Illuminate\Database\ConnectionResolverInterface;
 use Illuminate\Database\Query\Builder;
+use Illuminate\Support\Carbon;
 use Lantern\Instrumentation\Query\QuerySuspend;
 
 final class TraceQueries
@@ -20,14 +21,13 @@ final class TraceQueries
     public function __construct(
         private readonly ConnectionResolverInterface $db,
         private readonly ?string $connection = null,
-    ) {
-    }
+    ) {}
 
     /**
      * `path` (dashboard) is a substring match; `path_is` and `route_is` take Str::is style patterns where `*` is a
      * wildcard. `app` keeps rows tagged with that app plus untagged (older) rows; `since` is a Carbon instance.
      *
-     * @param array{status?: mixed, min_ms?: mixed, has_issues?: mixed, path?: mixed, path_is?: mixed, route_is?: mixed, since?: mixed, app?: mixed} $filters
+     * @param  array{status?: mixed, min_ms?: mixed, has_issues?: mixed, path?: mixed, path_is?: mixed, route_is?: mixed, since?: mixed, app?: mixed}  $filters
      * @return list<array<string, mixed>>
      */
     public function traces(array $filters = [], int $limit = 50): array
@@ -118,7 +118,7 @@ final class TraceQueries
      *
      * `keys` narrows to those issue ids.
      *
-     * @param array{type?: mixed, severity?: mixed, sort?: mixed, path_is?: mixed, route_is?: mixed, status?: mixed, app?: mixed, resolved?: mixed, keys?: mixed} $filters
+     * @param  array{type?: mixed, severity?: mixed, sort?: mixed, path_is?: mixed, route_is?: mixed, status?: mixed, app?: mixed, resolved?: mixed, keys?: mixed}  $filters
      * @return list<array<string, mixed>>
      */
     public function issues(array $filters = [], int $limit = 50): array
@@ -173,7 +173,7 @@ final class TraceQueries
     /**
      * Which of these issue keys are resolved.
      *
-     * @param list<string> $keys
+     * @param  list<string>  $keys
      * @return list<string>
      */
     public function resolvedKeys(array $keys): array
@@ -202,7 +202,7 @@ final class TraceQueries
     }
 
     /**
-     * @param array<string, mixed> $row
+     * @param  array<string, mixed>  $row
      * @return array<string, mixed>
      */
     private function issueRow(array $row): array
@@ -218,8 +218,8 @@ final class TraceQueries
      * Stored timestamps carry no zone (they are written in the app timezone); emit ISO-8601 with an offset
      * so browsers don't read them as local time.
      *
-     * @param array<string, mixed> $row
-     * @param list<string> $keys
+     * @param  array<string, mixed>  $row
+     * @param  list<string>  $keys
      * @return array<string, mixed>
      */
     private function withIsoDates(array $row, array $keys = ['started_at', 'created_at']): array
@@ -228,7 +228,7 @@ final class TraceQueries
         foreach ($keys as $key) {
             if (is_string($row[$key] ?? null) && $row[$key] !== '') {
                 try {
-                    $row[$key] = \Illuminate\Support\Carbon::parse($row[$key], $zone)->toIso8601String();
+                    $row[$key] = Carbon::parse($row[$key], $zone)->toIso8601String();
                 } catch (\Throwable) {
                 }
             }

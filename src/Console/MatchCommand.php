@@ -9,6 +9,7 @@ use Lantern\Agent\AgentException;
 use Lantern\Agent\Reader;
 use Lantern\Agent\SqlMatcher;
 use Lantern\Query\SqlInput;
+use Symfony\Component\Console\Input\ArgvInput;
 use Symfony\Component\Console\Input\StreamableInputInterface;
 
 final class MatchCommand extends AgentCommand
@@ -72,7 +73,7 @@ final class MatchCommand extends AgentCommand
     {
         $stream = $this->input instanceof StreamableInputInterface ? $this->input->getStream() : null;
         if ($stream === null) {
-            if (! $this->input instanceof \Symfony\Component\Console\Input\ArgvInput || ! defined('STDIN') || (function_exists('stream_isatty') && stream_isatty(STDIN))) {
+            if (! $this->input instanceof ArgvInput || ! defined('STDIN') || (function_exists('stream_isatty') && stream_isatty(STDIN))) {
                 return '';
             }
             $stream = STDIN;

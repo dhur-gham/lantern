@@ -16,9 +16,7 @@ final class ProductionSnapshot
     private static array $cache = [];
 
     /** @param array<string, int> $rowCounts */
-    private function __construct(private readonly ?SchemaSnapshot $snapshot, private readonly array $rowCounts)
-    {
-    }
+    private function __construct(private readonly ?SchemaSnapshot $snapshot, private readonly array $rowCounts) {}
 
     public static function load(): ?self
     {

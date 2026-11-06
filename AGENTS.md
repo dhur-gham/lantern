@@ -12,7 +12,8 @@ Lantern is a Laravel package: request tracing and performance issue detection (N
 - `src/Agent` JSON output, `Reader`, `Findings`, `Redactor`, `AgentException`, `AgentCommand` base class.
 - `src/Console` artisan commands; `src/Mcp` MCP server and tools (wrap the CLI); `src/Http` dashboard and API.
 - `config/lantern.php`, `database/` migrations, `routes/`, `resources/` (views, `boost/` guideline and skill).
-- `docs/`: `CONFIG.md`, `CLI.md`, `AGENTS_GUIDE.md`, `COMPATIBILITY.md`.
+- `src/Scenario` + `src/Console/ScenarioCommand.php`: `lantern:scenario` (replay Livewire/HTTP interactions from a JSON file, rollback check, fakes).
+- `docs/`: `FULL-DOCS.md` (full reference), `CONFIG.md`, `CLI.md`, `AGENTS_GUIDE.md`, `COMPATIBILITY.md`.
 
 ## Tests
 

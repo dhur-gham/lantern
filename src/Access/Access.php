@@ -6,9 +6,11 @@ namespace Lantern\Access;
 
 use Illuminate\Auth\SessionGuard;
 use Illuminate\Contracts\Auth\Authenticatable;
+use Illuminate\Contracts\Auth\Guard;
 use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Http\Request;
 use Lantern\Agent\AgentException;
+use Laravel\Sanctum\Sanctum;
 use Throwable;
 
 /**
@@ -208,8 +210,8 @@ final class Access
                 $this->app['session']->put((string) $key, $value);
             }
         }
-        if ($type === 'sanctum' && class_exists(\Laravel\Sanctum\Sanctum::class)) {
-            \Laravel\Sanctum\Sanctum::actingAs($user, (array) ($surface['abilities'] ?? ['*']), $guardName);
+        if ($type === 'sanctum' && class_exists(Sanctum::class)) {
+            Sanctum::actingAs($user, (array) ($surface['abilities'] ?? ['*']), $guardName);
         }
 
         return $user;
@@ -310,7 +312,7 @@ final class Access
     }
 
     /** @param array<string, mixed> $surface */
-    private function guard(array $surface, ?string $default = null): \Illuminate\Contracts\Auth\Guard
+    private function guard(array $surface, ?string $default = null): Guard
     {
         $name = (string) ($surface['guard'] ?? $default ?? $this->app['config']->get('auth.defaults.guard', 'web'));
         if ($this->app['config']->get('auth.guards.'.$name) === null) {
@@ -351,7 +353,7 @@ final class Access
     /** @param array<string, mixed> $entry */
     private function revokeSanctum(array $entry): void
     {
-        $model = \Laravel\Sanctum\Sanctum::$personalAccessTokenModel ?? null;
+        $model = Sanctum::$personalAccessTokenModel ?? null;
         if (is_string($model) && isset($entry['token_id'])) {
             $model::query()->whereKey($entry['token_id'])->delete();
         }

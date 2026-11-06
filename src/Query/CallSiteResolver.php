@@ -212,7 +212,7 @@ final class CallSiteResolver
             return true;
         }
 
-        return (DIRECTORY_SEPARATOR === chr(92) || preg_match('~^[a-z]:/~i', $prefix) === 1)
+        return (chr(92) === DIRECTORY_SEPARATOR || preg_match('~^[a-z]:/~i', $prefix) === 1)
             && strncasecmp($path, $prefix, strlen($prefix)) === 0;
     }
 

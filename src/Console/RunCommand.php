@@ -133,8 +133,8 @@ final class RunCommand extends AgentCommand
     }
 
     /**
-     * @param array<string, mixed> $args
-     * @param array<string, bool> $connections rolled back or not, per connection the script touched; updated in place
+     * @param  array<string, mixed>  $args
+     * @param  array<string, bool>  $connections  rolled back or not, per connection the script touched; updated in place
      * @return array{class: string, message: string}|null
      */
     private function runScript(string $script, array $args, Recording $recording, ?ConnectionRollback $rollback, array &$connections): ?array
@@ -302,7 +302,7 @@ final class RunCommand extends AgentCommand
     }
 
     /**
-     * @param list<list<array<string, mixed>>> $runs
+     * @param  list<list<array<string, mixed>>>  $runs
      * @return list<array<string, mixed>>
      */
     private function summary(array $runs): array

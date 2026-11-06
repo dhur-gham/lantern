@@ -8,6 +8,8 @@ use Closure;
 use Illuminate\Contracts\Foundation\Application;
 use Lantern\Trace\Recorder;
 use Lantern\Trace\SpanType;
+use Lantern\Trace\Trace;
+use Livewire\Component;
 use Livewire\Livewire;
 use Throwable;
 use WeakMap;
@@ -51,7 +53,7 @@ final class LivewireInstrumentation
                 self::guard(static function () use ($app, $args): void {
                     $recorder = self::recorder($app);
                     $trace = $recorder?->isActive() ? $recorder->trace() : null;
-                    if ($trace !== null && ($args[0] ?? null) instanceof \Livewire\Component && is_string($args[1] ?? null) && self::isUpdate()) {
+                    if ($trace !== null && ($args[0] ?? null) instanceof Component && is_string($args[1] ?? null) && self::isUpdate()) {
                         self::addCall($trace, $args[0]::class, 'updated.'.$args[1]);
                     }
                 });
@@ -79,7 +81,7 @@ final class LivewireInstrumentation
             }
 
             $meta = self::meta($component, $phase, $method);
-            $name = $component instanceof \Livewire\Component ? class_basename($component).' '.($method !== null ? 'call '.$method : $phase) : $phase;
+            $name = $component instanceof Component ? class_basename($component).' '.($method !== null ? 'call '.$method : $phase) : $phase;
             $span = $recorder->start(SpanType::Livewire, $name, $meta);
             self::touch($recorder, $meta['component'] ?? null);
             self::label($recorder, $meta['component'] ?? null, $method, $params);
@@ -105,7 +107,7 @@ final class LivewireInstrumentation
 
             $meta = self::meta($component, $phase, null);
             $now = hrtime(true);
-            $name = $component instanceof \Livewire\Component ? class_basename($component).' '.$phase : $phase;
+            $name = $component instanceof Component ? class_basename($component).' '.$phase : $phase;
             $recorder->recordClosed(SpanType::Livewire, $name, $now, $now, $meta);
             self::touch($recorder, $meta['component'] ?? null);
             self::label($recorder, $meta['component'] ?? null, null);
@@ -115,7 +117,7 @@ final class LivewireInstrumentation
     /** @return array<string, mixed> */
     private static function meta(mixed $component, string $phase, ?string $method): array
     {
-        $isComponent = $component instanceof \Livewire\Component;
+        $isComponent = $component instanceof Component;
 
         return [
             'component' => $isComponent ? $component::class : null,
@@ -167,7 +169,7 @@ final class LivewireInstrumentation
         self::addCall($trace, $class, $method);
     }
 
-    private static function addCall(\Lantern\Trace\Trace $trace, string $class, string $method): void
+    private static function addCall(Trace $trace, string $class, string $method): void
     {
         if (($trace->meta['kind'] ?? null) === 'record') {
             return; // the record keeps its own name
@@ -200,7 +202,7 @@ final class LivewireInstrumentation
     {
         [$class, $method] = array_pad(explode('::', $call, 2), 2, '');
 
-        return ! str_starts_with($class, 'Filament\\') &&! str_starts_with($method, '__lazyLoad');
+        return ! str_starts_with($class, 'Filament\\') && ! str_starts_with($method, '__lazyLoad');
     }
 
     /**

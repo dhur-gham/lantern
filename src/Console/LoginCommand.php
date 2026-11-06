@@ -11,6 +11,7 @@ use Lantern\Agent\AgentCommand;
 use Lantern\Agent\AgentException;
 use Lantern\Agent\Findings;
 use Lantern\Agent\Reader;
+use Lantern\Storage\TraceQueries;
 use Throwable;
 
 final class LoginCommand extends AgentCommand
@@ -33,7 +34,7 @@ final class LoginCommand extends AgentCommand
         try {
             $this->format();
 
-            return $this->perform(new Reader($this->laravel->make(\Lantern\Storage\TraceQueries::class)));
+            return $this->perform(new Reader($this->laravel->make(TraceQueries::class)));
         } catch (AgentException $e) {
             return $this->failWith($e);
         } catch (Throwable $e) {

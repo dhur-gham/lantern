@@ -15,7 +15,7 @@ final class Findings
     public const ALL_FIELDS = ['id', 'type', 'severity', 'status', 'title', 'call_site', 'occurrences', 'count_total', 'total_ms', 'max_ms', 'suggestion', 'first_seen', 'last_seen', 'resolved_at', 'related_trace_ids', 'evidence'];
 
     /**
-     * @param array<string, mixed> $row stored lantern_issues row (as returned by TraceQueries)
+     * @param  array<string, mixed>  $row  stored lantern_issues row (as returned by TraceQueries)
      * @return array<string, mixed>
      */
     public static function fromRow(array $row): array
@@ -45,7 +45,7 @@ final class Findings
     /**
      * Compact finding from an issue embedded in a trace payload.
      *
-     * @param array<string, mixed> $i
+     * @param  array<string, mixed>  $i
      * @return array<string, mixed>
      */
     public static function brief(array $i): array
@@ -67,7 +67,7 @@ final class Findings
      * relation) plus the call-site file and function, never the line. Types whose id is already line independent
      * use the id.
      *
-     * @param array<string, mixed> $i
+     * @param  array<string, mixed>  $i
      */
     public static function shape(array $i): string
     {
@@ -96,7 +96,7 @@ final class Findings
      * File and enclosing function of a call site, however deep in closures: a query issued from a closure inside a
      * function counts as that function running.
      *
-     * @param array{file: string, line: int, function?: string}|null $site
+     * @param  array{file: string, line: int, function?: string}|null  $site
      */
     public static function whereFunction(?array $site): string
     {

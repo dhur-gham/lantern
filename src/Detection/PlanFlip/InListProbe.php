@@ -17,13 +17,11 @@ final class InListProbe
     private const NOT_AN_ALIAS = 'where|join|inner|left|right|cross|full|outer|natural|on|using|group|order|limit|union|having|set|window';
 
     /** @param (Closure(?string, string, array<int|string, mixed>): ?array<string, mixed>)|null $explain replaces EXPLAIN (tests) */
-    public function __construct(private readonly ?ExplainRunner $runner = null, private readonly ?Closure $explain = null)
-    {
-    }
+    public function __construct(private readonly ?ExplainRunner $runner = null, private readonly ?Closure $explain = null) {}
 
     /**
-     * @param array<int|string, mixed> $bindings
-     * @param list<int> $sizes
+     * @param  array<int|string, mixed>  $bindings
+     * @param  list<int>  $sizes
      * @return array{table: ?string, column: ?string, ids_source: string, sizes: list<array<string, mixed>>, plan_changes: list<array<string, mixed>>}|null null when the query has no IN list
      */
     public function run(string $sql, array $bindings, ?string $connection, array $sizes): ?array
@@ -76,9 +74,9 @@ final class InListProbe
     }
 
     /**
-     * @param array<int|string, mixed> $bindings
-     * @param array{start: int, end: int} $list
-     * @param list<int|string|float> $values
+     * @param  array<int|string, mixed>  $bindings
+     * @param  array{start: int, end: int}  $list
+     * @param  list<int|string|float>  $values
      * @return array{0: string, 1: list<mixed>}
      */
     private function resize(string $sql, array $bindings, array $list, array $values): array
@@ -98,7 +96,7 @@ final class InListProbe
     }
 
     /**
-     * @param array<int|string, mixed> $bindings
+     * @param  array<int|string, mixed>  $bindings
      * @return array<string, mixed>|null
      */
     private function plan(?string $connection, string $sql, array $bindings): ?array
