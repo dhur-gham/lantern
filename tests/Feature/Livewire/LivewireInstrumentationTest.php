@@ -5,12 +5,14 @@ declare(strict_types=1);
 namespace Lantern\Tests\Feature\Livewire;
 
 use Illuminate\Support\Facades\DB;
-use Livewire\Component;
-use Livewire\Livewire;
-use Livewire\LivewireServiceProvider;
+use Lantern\Instrumentation\Livewire\LivewireInstrumentation;
 use Lantern\LanternServiceProvider;
 use Lantern\Trace\Recorder;
 use Lantern\Trace\SpanType;
+use Lantern\Trace\Trace;
+use Livewire\Component;
+use Livewire\Livewire;
+use Livewire\LivewireServiceProvider;
 use Orchestra\Testbench\TestCase;
 
 class ProbeComponent extends Component
@@ -102,11 +104,11 @@ final class LivewireInstrumentationTest extends TestCase
     }
 
     /** @param list<array{0: string, 1: string}> $calls */
-    private function traceWithCalls(array $calls): \Lantern\Trace\Trace
+    private function traceWithCalls(array $calls): Trace
     {
         $recorder = new Recorder;
         $trace = $recorder->begin(['kind' => 'request']);
-        $m = new \ReflectionMethod(\Lantern\Instrumentation\Livewire\LivewireInstrumentation::class, 'addCall');
+        $m = new \ReflectionMethod(LivewireInstrumentation::class, 'addCall');
         foreach ($calls as [$class, $method]) {
             $m->invoke(null, $trace, $class, $method);
         }
@@ -167,7 +169,7 @@ final class LivewireInstrumentationTest extends TestCase
 
     public function test_normalise_generalises_record_keys_uuids_and_list_positions_only(): void
     {
-        $n = fn (string $c): string => \Lantern\Instrumentation\Livewire\LivewireInstrumentation::normalise($c);
+        $n = fn (string $c): string => LivewireInstrumentation::normalise($c);
 
         $this->assertSame('A\B::callSchemaComponentMethod:form.rows.record-*.photos', $n('A\B::callSchemaComponentMethod:form.rows.record-42.photos'));
         $this->assertSame('A\B::updated.data.rows.item-*.name', $n('A\B::updated.data.rows.item-0f8fad5b-d9cb-469f-a165-70867728950e.name'));

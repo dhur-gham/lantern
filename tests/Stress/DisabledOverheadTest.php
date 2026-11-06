@@ -15,6 +15,8 @@ use Illuminate\Queue\Events\JobProcessed;
 use Illuminate\Routing\Contracts\CallableDispatcher;
 use Illuminate\Routing\Contracts\ControllerDispatcher;
 use Illuminate\Routing\Events\RouteMatched;
+use Illuminate\Validation\Factory;
+use Lantern\Detection\Analyzer;
 use Lantern\Instrumentation\Lifecycle\TimedCallableDispatcher;
 use Lantern\Instrumentation\Lifecycle\TimedControllerDispatcher;
 use Lantern\Instrumentation\Lifecycle\TimedEngine;
@@ -31,7 +33,7 @@ final class DisabledOverheadTest extends StressTestCase
     {
         $this->assertFalse($this->app->bound(Recorder::class));
         $this->assertFalse($this->app->bound(TraceSink::class));
-        $this->assertFalse($this->app->bound(\Lantern\Detection\Analyzer::class));
+        $this->assertFalse($this->app->bound(Analyzer::class));
     }
 
     public function test_no_lantern_listeners_are_attached(): void
@@ -56,7 +58,7 @@ final class DisabledOverheadTest extends StressTestCase
 
     public function test_validator_factory_resolver_is_not_replaced(): void
     {
-        $this->assertNull((new ReflectionProperty(\Illuminate\Validation\Factory::class, 'resolver'))->getValue($this->app['validator']));
+        $this->assertNull((new ReflectionProperty(Factory::class, 'resolver'))->getValue($this->app['validator']));
     }
 
     public function test_requests_work_and_lazy_loads_never_throw(): void

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Lantern\Tests\Stress;
 
+use Lantern\Instrumentation\Lifecycle\MemorySink;
 use Lantern\Sampling\Sampler;
 use Lantern\Trace\Recorder;
 use Lantern\Trace\Trace;
@@ -108,7 +109,7 @@ final class HeadSamplingTest extends StressTestCase
 
     public function test_web_zero_sampling_registers_nothing_and_requests_still_work(): void
     {
-        $this->assertFalse($this->app->bound(\Lantern\Instrumentation\Lifecycle\MemorySink::class));
+        $this->assertFalse($this->app->bound(MemorySink::class));
 
         $this->get('/scenario/lazy-loop')->assertOk()->assertSee('30');
         $this->getJson('/scenario/throw')->assertStatus(500)->assertExactJson(['message' => 'Server Error']);

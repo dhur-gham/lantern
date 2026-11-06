@@ -5,9 +5,11 @@ declare(strict_types=1);
 namespace Lantern\Tests\Feature\Access;
 
 use Illuminate\Auth\Events\Login;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Route;
 use Lantern\Storage\DatabaseTraceStore;
+use Lantern\Storage\PayloadCodec;
 use Lantern\Trace\Recorder;
 
 final class LoginLinkTest extends AccessTestCase
@@ -154,9 +156,9 @@ final class LoginLinkTest extends AccessTestCase
         // through the HTTP kernel with the host "localhost", like tinker, Livewire::test or lantern:run would
         $this->get('http://localhost/probe')->assertOk();
 
-        $stored = \Illuminate\Support\Facades\DB::table('lantern_traces')->where('path', '/probe')->first();
+        $stored = DB::table('lantern_traces')->where('path', '/probe')->first();
         $this->assertNotNull($stored, 'the request should have been traced');
-        $this->assertArrayNotHasKey('host', \Lantern\Storage\PayloadCodec::decode((string) $stored->payload)['meta'] ?? []);
+        $this->assertArrayNotHasKey('host', PayloadCodec::decode((string) $stored->payload)['meta'] ?? []);
 
         [$code, $data] = $this->login(['surface' => 'panel']);
 

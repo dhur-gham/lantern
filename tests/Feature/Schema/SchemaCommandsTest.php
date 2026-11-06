@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Lantern\Tests\Feature\Schema;
 
+use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Schema;
 use Lantern\Agent\Commands;
@@ -32,7 +33,7 @@ CSV;
     {
         parent::setUp();
 
-        $kernel = $this->app->make(\Illuminate\Contracts\Console\Kernel::class);
+        $kernel = $this->app->make(Kernel::class);
         foreach (Commands::all() as $class) {
             $kernel->registerCommand($this->app->make($class));
         }
@@ -67,7 +68,7 @@ CSV;
     }
 
     /**
-     * @param array<string, mixed> $params
+     * @param  array<string, mixed>  $params
      * @return array{0: int, 1: array<string, mixed>}
      */
     private function runJson(string $command, array $params = []): array

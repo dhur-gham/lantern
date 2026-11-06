@@ -4,8 +4,9 @@ declare(strict_types=1);
 
 namespace Lantern\Tests\Feature\Access;
 
-use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Route;
+use Lantern\Agent\AgentException;
+use Lantern\Facades\Lantern;
 
 /** The route and the command exist only with APP_ENV=local, so the testing environment already proves the guard. */
 final class AccessUnavailableTest extends AccessTestCase
@@ -24,7 +25,7 @@ final class AccessUnavailableTest extends AccessTestCase
 
         $this->assertSame(2, $code);
         $this->assertSame('config_error', $data['error']['code']);
-        $this->expectException(\Lantern\Agent\AgentException::class);
-        \Lantern\Facades\Lantern::actingAs('panel');
+        $this->expectException(AgentException::class);
+        Lantern::actingAs('panel');
     }
 }

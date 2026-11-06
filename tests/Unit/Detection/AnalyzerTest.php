@@ -16,7 +16,7 @@ final class AnalyzerTest extends TestCase
 {
     private function trace(): Trace
     {
-        $r = new Recorder();
+        $r = new Recorder;
         $t = $r->begin([], 0);
         $r->end();
 
@@ -30,7 +30,8 @@ final class AnalyzerTest extends TestCase
 
     private function fake(array $issues): Detector
     {
-        return new class($issues) implements Detector {
+        return new class($issues) implements Detector
+        {
             public function __construct(private array $issues) {}
 
             public function detect(Trace $trace): array
@@ -66,7 +67,8 @@ final class AnalyzerTest extends TestCase
 
     public function test_failing_detector_is_isolated(): void
     {
-        $boom = new class implements Detector {
+        $boom = new class implements Detector
+        {
             public function detect(Trace $trace): array
             {
                 throw new \RuntimeException('boom');

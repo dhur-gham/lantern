@@ -11,6 +11,7 @@ use Lantern\Detection\Detectors\NPlusOneDetector;
 use Lantern\Detection\Detectors\PlanFlipDetector;
 use Lantern\Detection\Detectors\SlowQueryDetector;
 use Lantern\Detection\Issue;
+use Lantern\Instrumentation\Livewire\LivewireInstrumentation;
 use Lantern\Storage\DatabaseTraceStore;
 use Lantern\Trace\Recorder;
 use Lantern\Trace\SpanType;
@@ -119,7 +120,7 @@ final class ResolvedIssuesTest extends AgentTestCase
 
     public function test_a_livewire_finding_resolves_on_another_row_and_another_batch_of_the_same_interaction(): void
     {
-        $normalise = \Lantern\Instrumentation\Livewire\LivewireInstrumentation::normalise(...);
+        $normalise = LivewireInstrumentation::normalise(...);
         $first = 'livewire:'.$normalise('App\Pages\EditItemSimple::updated.data.variations.record-17097962094.sizes.0');
         $second = 'livewire:'.$normalise('App\Pages\EditItemSimple::updated.data.variations.record-5550001.sizes.3');
         $this->assertSame($first, $second);

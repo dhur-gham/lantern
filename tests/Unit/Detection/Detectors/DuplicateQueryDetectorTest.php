@@ -19,7 +19,7 @@ final class DuplicateQueryDetectorTest extends TestCase
 
     protected function setUp(): void
     {
-        $this->r = new Recorder();
+        $this->r = new Recorder;
         $this->r->begin([], 0);
     }
 
@@ -59,14 +59,18 @@ final class DuplicateQueryDetectorTest extends TestCase
 
     public function test_warning_at_three(): void
     {
-        for ($i = 0; $i < 3; $i++) { $this->q('select * from users where id = ?', [1]); }
+        for ($i = 0; $i < 3; $i++) {
+            $this->q('select * from users where id = ?', [1]);
+        }
         $issues = $this->det(['duplicate_min_repeats' => 2])->detect($this->trace());
         $this->assertSame(Issue::SEV_WARNING, $issues[0]->severity);
     }
 
     public function test_different_bindings_not_duplicates(): void
     {
-        for ($i = 1; $i <= 6; $i++) { $this->q('select * from users where id = ?', [$i]); }
+        for ($i = 1; $i <= 6; $i++) {
+            $this->q('select * from users where id = ?', [$i]);
+        }
         $this->assertSame([], $this->det(['duplicate_min_repeats' => 2])->detect($this->trace()));
     }
 

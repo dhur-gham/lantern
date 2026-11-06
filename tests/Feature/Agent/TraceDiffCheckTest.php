@@ -4,7 +4,10 @@ declare(strict_types=1);
 
 namespace Lantern\Tests\Feature\Agent;
 
+use Illuminate\Support\Facades\DB;
+use Lantern\Agent\Findings;
 use Lantern\Agent\Redactor;
+use Lantern\Detection\Issue;
 
 final class TraceDiffCheckTest extends AgentTestCase
 {
@@ -244,7 +247,7 @@ final class TraceDiffCheckTest extends AgentTestCase
     public function test_redactor(): void
     {
         $this->assertSame(
-            "select * from `users` where `email` = ? and `id` = ? and x in (?, ...) limit ?",
+            'select * from `users` where `email` = ? and `id` = ? and x in (?, ...) limit ?',
             Redactor::sql("select * from `users` where `email` = 'a''b@c.com' and `id` = 42 and x in (1, 2, 3) limit 5"),
         );
         $this->assertSame('select * from t1 where a = ?', Redactor::sql('select * from t1 where a = 3.5'));
@@ -264,9 +267,9 @@ final class TraceDiffCheckTest extends AgentTestCase
             'call_site' => ['file' => base_path('app/Foo.php'), 'line' => 121, 'function' => 'Foo@bar'], 'span_ids' => [2],
             'meta' => ['fingerprint' => 'fpq'], 'suggestion' => null,
         ], $over);
-        $payload = json_decode((string) \Illuminate\Support\Facades\DB::table('lantern_traces')->where('id', $id)->value('payload'), true);
+        $payload = json_decode((string) DB::table('lantern_traces')->where('id', $id)->value('payload'), true);
         $payload['meta']['issues'] = [$issue];
-        \Illuminate\Support\Facades\DB::table('lantern_traces')->where('id', $id)->update(['payload' => json_encode($payload), 'issue_count' => 1]);
+        DB::table('lantern_traces')->where('id', $id)->update(['payload' => json_encode($payload), 'issue_count' => 1]);
     }
 
     public function test_diff_matches_a_moved_query_instead_of_resolved_plus_new(): void
@@ -333,10 +336,10 @@ final class TraceDiffCheckTest extends AgentTestCase
         $base = ['type' => 'n_plus_one', 'key' => 'x', 'title' => 't', 'call_site' => ['file' => base_path('app/Foo.php'), 'line' => 10, 'function' => 'A@b'], 'meta' => ['fingerprint' => 'f1']];
         $moved = array_replace($base, ['key' => 'y', 'call_site' => ['file' => base_path('app/Foo.php'), 'line' => 99, 'function' => 'A@b']]);
 
-        $this->assertSame(\Lantern\Agent\Findings::shape($base), \Lantern\Agent\Findings::shape($moved));
-        $this->assertNotSame(\Lantern\Agent\Findings::shape($base), \Lantern\Agent\Findings::shape(array_replace_recursive($base, ['call_site' => ['function' => 'A@c']])));
-        $this->assertNotSame(\Lantern\Agent\Findings::shape($base), \Lantern\Agent\Findings::shape(array_replace_recursive($base, ['meta' => ['fingerprint' => 'f2']])));
-        $this->assertSame('dup-key', \Lantern\Agent\Findings::shape(['type' => 'duplicate_query', 'key' => 'dup-key', 'call_site' => $base['call_site']]));
+        $this->assertSame(Findings::shape($base), Findings::shape($moved));
+        $this->assertNotSame(Findings::shape($base), Findings::shape(array_replace_recursive($base, ['call_site' => ['function' => 'A@c']])));
+        $this->assertNotSame(Findings::shape($base), Findings::shape(array_replace_recursive($base, ['meta' => ['fingerprint' => 'f2']])));
+        $this->assertSame('dup-key', Findings::shape(['type' => 'duplicate_query', 'key' => 'dup-key', 'call_site' => $base['call_site']]));
     }
 
     public function test_diff_ignores_timing_noise_and_threshold_findings(): void
@@ -348,10 +351,10 @@ final class TraceDiffCheckTest extends AgentTestCase
         $this->assertSame('same', $data['dimensions']['duration_ms']);
         $this->assertSame('same', $data['verdict']);
 
-        $key = \Lantern\Detection\Issue::key('missing_index', 'fp1');
+        $key = Issue::key('missing_index', 'fp1');
         $this->seedTrace('c', 3, [$key], 100, '2026-01-01 12:00:00');
-        \Illuminate\Support\Facades\DB::table('lantern_traces')->where('id', 'c')->update([
-            'payload' => str_replace('"type":"n_plus_one"', '"type":"missing_index"', (string) \Illuminate\Support\Facades\DB::table('lantern_traces')->where('id', 'c')->value('payload')),
+        DB::table('lantern_traces')->where('id', 'c')->update([
+            'payload' => str_replace('"type":"n_plus_one"', '"type":"missing_index"', (string) DB::table('lantern_traces')->where('id', 'c')->value('payload')),
         ]);
 
         [, $data] = $this->jsonOut('lantern:diff', ['before' => 'a', 'after' => 'c']);

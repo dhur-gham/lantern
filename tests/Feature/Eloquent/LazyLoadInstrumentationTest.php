@@ -4,11 +4,12 @@ declare(strict_types=1);
 
 namespace Lantern\Tests\Feature\Eloquent;
 
-use Illuminate\Database\LazyLoadingViolationException;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\LazyLoadingViolationException;
 use Lantern\Instrumentation\Eloquent\LazyLoadInstrumentation;
 use Lantern\Tests\Feature\Query\QPost;
 use Lantern\Tests\Feature\Query\QueryTestCase;
+use Lantern\Trace\Span;
 use Lantern\Trace\SpanType;
 use ReflectionProperty;
 
@@ -35,7 +36,7 @@ final class LazyLoadInstrumentationTest extends QueryTestCase
         parent::tearDown();
     }
 
-    /** @return list<\Lantern\Trace\Span> */
+    /** @return list<Span> */
     private function lazyEvents(): array
     {
         return array_values(array_filter(

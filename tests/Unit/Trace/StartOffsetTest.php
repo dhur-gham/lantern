@@ -12,7 +12,7 @@ final class StartOffsetTest extends TestCase
 {
     public function test_nodes_carry_start_offset_relative_to_trace_start(): void
     {
-        $recorder = new Recorder();
+        $recorder = new Recorder;
         $recorder->begin();
         $first = $recorder->start(SpanType::Middleware, 'first');
         $recorder->stop($first);

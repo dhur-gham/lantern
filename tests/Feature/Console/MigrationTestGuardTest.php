@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace Lantern\Tests\Feature\Console;
 
+use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Schema;
 use Lantern\Console\InstallCommand;
+use Lantern\Console\StatusCommand;
 use Lantern\Storage\MigrationGuard;
 use Lantern\Tests\TestCase;
 
@@ -43,7 +45,7 @@ final class MigrationTestGuardTest extends TestCase
     public function test_sql_output_is_still_complete_for_a_non_default_connection(): void
     {
         config(['database.connections.other' => config('database.connections.'.config('database.default')), 'lantern.storage.connection' => 'other']);
-        $this->app->make(\Illuminate\Contracts\Console\Kernel::class)->registerCommand($this->app->make(InstallCommand::class));
+        $this->app->make(Kernel::class)->registerCommand($this->app->make(InstallCommand::class));
 
         Artisan::call('lantern:install', ['--sql' => true]);
 
@@ -52,7 +54,7 @@ final class MigrationTestGuardTest extends TestCase
 
     public function test_install_mentions_the_phpunit_setting(): void
     {
-        $this->app->make(\Illuminate\Contracts\Console\Kernel::class)->registerCommand($this->app->make(InstallCommand::class));
+        $this->app->make(Kernel::class)->registerCommand($this->app->make(InstallCommand::class));
 
         Artisan::call('lantern:install');
 
@@ -75,8 +77,8 @@ final class MigrationTestGuardTest extends TestCase
         $this->assertTrue(MigrationGuard::skip('broken'));
         $this->assertSame('connection-unverified', MigrationGuard::lastSkip());
 
-        $this->app->make(\Illuminate\Contracts\Console\Kernel::class)->registerCommand($this->app->make(\Lantern\Console\StatusCommand::class));
-        $this->app->make(\Illuminate\Contracts\Console\Kernel::class)->registerCommand($this->app->make(InstallCommand::class));
+        $this->app->make(Kernel::class)->registerCommand($this->app->make(StatusCommand::class));
+        $this->app->make(Kernel::class)->registerCommand($this->app->make(InstallCommand::class));
 
         Artisan::call('lantern:status', ['--json' => true]);
         $this->assertSame('connection-unverified', json_decode(Artisan::output(), true)['migration_skip']);

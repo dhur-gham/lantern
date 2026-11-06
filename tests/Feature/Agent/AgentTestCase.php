@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Lantern\Tests\Feature\Agent;
 
+use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Lantern\Agent\Commands;
@@ -22,14 +23,14 @@ abstract class AgentTestCase extends TestCase
         parent::setUp();
 
         $this->loadMigrationsFrom(dirname(__DIR__, 3).'/database/migrations');
-        $kernel = $this->app->make(\Illuminate\Contracts\Console\Kernel::class);
+        $kernel = $this->app->make(Kernel::class);
         foreach (Commands::all() as $class) {
             $kernel->registerCommand($this->app->make($class));
         }
     }
 
     /**
-     * @param array<string, mixed> $params
+     * @param  array<string, mixed>  $params
      * @return array{0: int, 1: string}
      */
     protected function run_(string $command, array $params = []): array
@@ -40,7 +41,7 @@ abstract class AgentTestCase extends TestCase
     }
 
     /**
-     * @param array<string, mixed> $params
+     * @param  array<string, mixed>  $params
      * @return array{0: int, 1: array<string, mixed>}
      */
     protected function jsonOut(string $command, array $params = []): array
@@ -64,8 +65,8 @@ abstract class AgentTestCase extends TestCase
     }
 
     /**
-     * @param list<string> $issueKeys
-     * @param array<string, mixed> $over
+     * @param  list<string>  $issueKeys
+     * @param  array<string, mixed>  $over
      */
     protected function seedTrace(string $id, int $queries, array $issueKeys = [], int $ms = 40, string $at = '2026-01-01 10:00:00', string $route = 'posts.index', string $sql = "select * from `users` where `email` = 'jane@example.com' and `id` = 7", int $line = 12, ?string $function = null): void
     {

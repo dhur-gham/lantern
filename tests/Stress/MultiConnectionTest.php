@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Lantern\Tests\Stress;
 
 use Illuminate\Support\Facades\DB;
+use Lantern\Storage\DatabaseTraceStore;
 
 final class MultiConnectionTest extends StressTestCase
 {
@@ -126,7 +127,7 @@ final class MultiConnectionTest extends StressTestCase
     {
         $this->get('/scenario/second-conn')->assertOk();
 
-        $payload = (new \Lantern\Storage\DatabaseTraceStore($this->app['db'], 'second'))->find(DB::connection('second')->table('lantern_traces')->value('id'));
+        $payload = (new DatabaseTraceStore($this->app['db'], 'second'))->find(DB::connection('second')->table('lantern_traces')->value('id'));
         $names = array_map(fn ($c) => $c['meta']['connection'] ?? null, $payload['payload']['root']['children'] ?? []);
         $this->assertSame(1, (int) $payload['query_count']);
         $this->assertNotContains('second', $names);

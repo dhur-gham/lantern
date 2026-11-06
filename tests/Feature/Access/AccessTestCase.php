@@ -4,16 +4,16 @@ declare(strict_types=1);
 
 namespace Lantern\Tests\Feature\Access;
 
-use Illuminate\Database\Eloquent\Model;
+use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Schema;
-use Laravel\Sanctum\HasApiTokens;
-use Laravel\Sanctum\SanctumServiceProvider;
 use Lantern\Access\ProvidesCredentials;
 use Lantern\Agent\Commands;
 use Lantern\LanternServiceProvider;
+use Laravel\Sanctum\HasApiTokens;
+use Laravel\Sanctum\SanctumServiceProvider;
 use Orchestra\Testbench\TestCase;
 
 class AccessUser extends Authenticatable
@@ -104,7 +104,7 @@ abstract class AccessTestCase extends TestCase
             $t->timestamps();
         });
         Artisan::call('migrate', ['--path' => dirname(__DIR__, 3).'/database/migrations', '--realpath' => true, '--force' => true]);
-        $kernel = $this->app->make(\Illuminate\Contracts\Console\Kernel::class);
+        $kernel = $this->app->make(Kernel::class);
         foreach (Commands::all() as $class) {
             $kernel->registerCommand($this->app->make($class));
         }

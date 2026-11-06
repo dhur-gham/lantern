@@ -142,7 +142,7 @@ final class FingerprintPropertyTest extends TestCase
 
     public function test_unterminated_quote_comment_and_garbage_do_not_throw(): void
     {
-        foreach (["select 'unterminated", 'select /* never closed', 'select -- only comment', '"', '`', "'", '[', '$', '', ' ', "\0", "\xFF\xFE", 'select ' . str_repeat('(', 5000)] as $sql) {
+        foreach (["select 'unterminated", 'select /* never closed', 'select -- only comment', '"', '`', "'", '[', '$', '', ' ', "\0", "\xFF\xFE", 'select '.str_repeat('(', 5000)] as $sql) {
             $this->assertIsString($this->f->normalize($sql));
             $this->assertNotSame('', $this->f->fingerprint($sql));
         }

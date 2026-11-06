@@ -19,7 +19,7 @@ final class SlowQueryDetectorTest extends TestCase
 
     protected function setUp(): void
     {
-        $this->r = new Recorder();
+        $this->r = new Recorder;
         $this->r->begin([], 0);
     }
 

@@ -64,9 +64,7 @@ final class IndexAnalysisTest extends QueryTestCase
         return new class($plan) implements PlanSource
         {
             /** @param array<string, mixed> $plan */
-            public function __construct(private readonly array $plan)
-            {
-            }
+            public function __construct(private readonly array $plan) {}
 
             public function explain(?string $connectionName, string $sql, array $bindings = []): ?array
             {
@@ -83,9 +81,7 @@ final class IndexAnalysisTest extends QueryTestCase
     {
         return new class($indexes, $columns, $throw) implements Catalog
         {
-            public function __construct(private readonly array $indexes, private readonly array $columns, private readonly bool $throw)
-            {
-            }
+            public function __construct(private readonly array $indexes, private readonly array $columns, private readonly bool $throw) {}
 
             public function indexes(?string $connection, string $table): array
             {
@@ -357,9 +353,7 @@ final class IndexAnalysisTest extends QueryTestCase
             /** @var list<array<string, mixed>> */
             public array $calls = [];
 
-            public function __construct(private readonly int|\Throwable|null $answer)
-            {
-            }
+            public function __construct(private readonly int|\Throwable|null $answer) {}
 
             public function rowsReturned(?string $connectionName, string $sql, array $bindings = [], int $timeoutMs = 2000): ?int
             {

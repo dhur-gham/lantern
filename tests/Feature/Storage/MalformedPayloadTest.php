@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace Lantern\Tests\Feature\Storage;
 
-use Lantern\Storage\TraceQueries;
 use Illuminate\Support\Facades\DB;
+use Lantern\Storage\TraceQueries;
 use Lantern\Tests\TestCase;
 
 final class MalformedPayloadTest extends TestCase

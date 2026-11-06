@@ -3,6 +3,7 @@
 namespace Lantern\Tests\Feature\Lifecycle;
 
 use Illuminate\Routing\Router;
+use Illuminate\Support\Facades\Validator;
 use Lantern\Tests\TestCase;
 use Lantern\Trace\Recorder;
 use Lantern\Trace\Span;
@@ -38,7 +39,7 @@ abstract class LifecycleTestCase extends TestCase
         $router->get('/things', [ThingController::class, 'index']);
         $router->post('/things', [ThingController::class, 'store']);
         $router->get('/invokable', InvokableController::class);
-        $router->get('/validator', fn () => \Illuminate\Support\Facades\Validator::make(['a' => 1], ['a' => 'integer'])->validate());
+        $router->get('/validator', fn () => Validator::make(['a' => 1], ['a' => 'integer'])->validate());
         $router->get('/closure', fn () => 'closure');
         $router->get('/named', fn () => 'named')->name('things.named');
         $router->get('/lantern/internal', fn () => 'ignored');

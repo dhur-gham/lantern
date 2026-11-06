@@ -5,7 +5,8 @@ declare(strict_types=1);
 namespace Lantern\Tests\Stress;
 
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\LazyLoadingViolationException;
+use Lantern\Instrumentation\Eloquent\LazyLoadInstrumentation;
+use Lantern\Tests\Stress\Support\SPost;
 
 /** App that already set preventLazyLoading with its own callback; its callback must keep working. */
 final class LazyLoadCustomCallbackTest extends StressTestCase
@@ -54,7 +55,7 @@ final class LazyLoadCustomCallbackTest extends StressTestCase
 
     public function test_app_callback_works_when_lantern_has_no_active_trace(): void
     {
-        $post = \Lantern\Tests\Stress\Support\SPost::all();
+        $post = SPost::all();
         foreach ($post as $p) {
             $p->author;
         }
@@ -68,12 +69,12 @@ final class LazyLoadCustomCallbackTest extends StressTestCase
         $cb = function () {
             throw new \DomainException('app says no');
         };
-        (new \ReflectionProperty(\Lantern\Instrumentation\Eloquent\LazyLoadInstrumentation::class, 'installed'))->setValue(null, null);
+        (new \ReflectionProperty(LazyLoadInstrumentation::class, 'installed'))->setValue(null, null);
         Model::handleLazyLoadingViolationUsing($cb);
-        \Lantern\Instrumentation\Eloquent\LazyLoadInstrumentation::register($this->app);
+        LazyLoadInstrumentation::register($this->app);
 
         $this->expectException(\DomainException::class);
-        foreach (\Lantern\Tests\Stress\Support\SPost::all() as $p) {
+        foreach (SPost::all() as $p) {
             $p->author;
         }
     }

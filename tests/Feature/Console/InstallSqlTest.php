@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Lantern\Tests\Feature\Console;
 
+use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Schema;
 use Lantern\Console\InstallCommand;
@@ -15,7 +16,7 @@ final class InstallSqlTest extends TestCase
     {
         parent::setUp();
 
-        $this->app->make(\Illuminate\Contracts\Console\Kernel::class)->registerCommand($this->app->make(InstallCommand::class));
+        $this->app->make(Kernel::class)->registerCommand($this->app->make(InstallCommand::class));
     }
 
     public function test_sql_prints_every_migration_without_touching_the_database(): void

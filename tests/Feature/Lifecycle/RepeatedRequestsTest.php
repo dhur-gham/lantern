@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Lantern\Tests\Feature\Lifecycle;
 
+use Lantern\Instrumentation\Lifecycle\TraceSink;
 use ReflectionProperty;
 
 final class RepeatedRequestsTest extends LifecycleTestCase
@@ -18,6 +19,6 @@ final class RepeatedRequestsTest extends LifecycleTestCase
         }
 
         $this->assertSame($count, count((new ReflectionProperty($this->app, 'terminatingCallbacks'))->getValue($this->app)));
-        $this->assertNotNull($this->app->make(\Lantern\Instrumentation\Lifecycle\TraceSink::class)->last());
+        $this->assertNotNull($this->app->make(TraceSink::class)->last());
     }
 }

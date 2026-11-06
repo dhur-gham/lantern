@@ -9,6 +9,7 @@ use Illuminate\Support\Facades\Schema;
 use Lantern\Detection\Issue;
 use Lantern\Storage\DatabaseTraceStore;
 use Lantern\Trace\Recorder;
+use Lantern\Trace\Trace;
 
 final class ScopeFiltersTest extends AgentTestCase
 {
@@ -225,7 +226,7 @@ final class ScopeFiltersTest extends AgentTestCase
         $this->assertTrue(Schema::hasColumn('lantern_issues', 'app'));
     }
 
-    private function freshTrace(): \Lantern\Trace\Trace
+    private function freshTrace(): Trace
     {
         $recorder = new Recorder;
         $trace = $recorder->begin(['kind' => 'request', 'method' => 'GET', 'path' => '/x', 'status' => 200]);
