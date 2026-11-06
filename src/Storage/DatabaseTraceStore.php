@@ -6,11 +6,12 @@ namespace Lantern\Storage;
 
 use Illuminate\Database\Connection;
 use Illuminate\Database\ConnectionResolverInterface;
-use Illuminate\Database\QueryException;
 use Illuminate\Database\Query\Expression;
+use Illuminate\Database\QueryException;
 use Lantern\Agent\Findings;
 use Lantern\Detection\Issue;
 use Lantern\Instrumentation\Query\QuerySuspend;
+use Lantern\Trace\Span;
 use Lantern\Trace\Trace;
 
 final class DatabaseTraceStore implements TraceStore
@@ -31,8 +32,7 @@ final class DatabaseTraceStore implements TraceStore
         private readonly ?string $connection = null,
         private readonly bool $compress = false,
         private readonly ?string $app = null,
-    ) {
-    }
+    ) {}
 
     public function store(Trace $trace, array $issues): void
     {
@@ -79,8 +79,8 @@ final class DatabaseTraceStore implements TraceStore
     }
 
     /**
-     * @param array<string, mixed> $row
-     * @param list<Issue> $issues
+     * @param  array<string, mixed>  $row
+     * @param  list<Issue>  $issues
      */
     private function write(Connection $conn, array $row, array $issues, string $startedAt, Trace $trace, string $now): void
     {
@@ -113,7 +113,7 @@ final class DatabaseTraceStore implements TraceStore
      * Resolves open issues whose query shape ran in this trace without producing the finding. Runs in a savepoint so
      * a failure here never costs the trace; only a missing column escapes, to switch the write to the old schema.
      *
-     * @param list<Issue> $issues
+     * @param  list<Issue>  $issues
      */
     private function resolveCleared(Connection $conn, Trace $trace, array $issues, string $now, bool $withCode): void
     {
@@ -164,8 +164,8 @@ final class DatabaseTraceStore implements TraceStore
      * without the query, and the call-site file changed since the finding fired. The same code that skipped the query
      * is a data difference, not a fix. Without a route, the function in the trace or a stored hash, absence proves nothing.
      *
-     * @param list<string> $fired shapes of the findings this trace produced
-     * @param array<string, mixed> $ran shapes this trace ran clean (resolved by the caller)
+     * @param  list<string>  $fired  shapes of the findings this trace produced
+     * @param  array<string, mixed>  $ran  shapes this trace ran clean (resolved by the caller)
      */
     private function resolveRemoved(Connection $conn, Trace $trace, array $fired, array $ran, string $now): void
     {
@@ -252,7 +252,7 @@ final class DatabaseTraceStore implements TraceStore
     /**
      * One row per issue key (merged within the trace); occurrences starts at 1 so the upsert can add the row's values.
      *
-     * @param list<Issue> $issues
+     * @param  list<Issue>  $issues
      * @return list<array<string, mixed>>
      */
     private function issueRows(array $issues, string $now, string $traceId, bool $withResolve, ?Trace $trace = null, bool $withCode = false): array
@@ -298,7 +298,7 @@ final class DatabaseTraceStore implements TraceStore
      * The IN list size and SQL text of the query a finding fired on, so a later run with a smaller list or the same
      * SQL is not mistaken for a fix. Null for findings that are not about one query.
      *
-     * @param array<int, \Lantern\Trace\Span> $spans
+     * @param  array<int, Span>  $spans
      * @return array{in_size: ?int, sql_hash: ?string}
      */
     private function queryFacts(Issue $issue, array $spans): array

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Lantern\Tests\Feature\Matrix;
 
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Lantern\Detection\Detectors\PlanFlipDetector;
@@ -184,7 +185,7 @@ final class PlanFlipMatrixTest extends MatrixTestCase
         $detector->detect($this->trace(3, 400.0));
 
         $explainedAt = DB::table('lantern_plan_samples')->where('shape', self::FP)->value('explained_at');
-        $this->assertTrue(\Illuminate\Support\Carbon::parse((string) $explainedAt)->gt(now()->subMinutes(2)));
+        $this->assertTrue(Carbon::parse((string) $explainedAt)->gt(now()->subMinutes(2)));
     }
 
     public function test_detector_persists_the_plan_of_a_real_explain(): void

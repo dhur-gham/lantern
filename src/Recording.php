@@ -5,10 +5,12 @@ declare(strict_types=1);
 namespace Lantern;
 
 use Closure;
+use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Contracts\Foundation\Application;
 use Lantern\Instrumentation\Lifecycle\LifecycleInstrumentation;
 use Lantern\Trace\Recorder;
 use Lantern\Trace\SpanType;
+use Lantern\Trace\Trace;
 use Throwable;
 
 /**
@@ -23,7 +25,7 @@ final class Recording
     public function __construct(private readonly Application $app) {}
 
     /**
-     * @param array<string, mixed> $context ids and small values describing the run; redacted and truncated like bindings
+     * @param  array<string, mixed>  $context  ids and small values describing the run; redacted and truncated like bindings
      */
     public function record(string $name, Closure $fn, array $context = []): mixed
     {
@@ -74,7 +76,7 @@ final class Recording
      * Signs a surface's user in for code running in this process, from the same recipes lantern:login uses:
      * `Lantern::actingAs('panel')` before `Livewire::test(...)` or a service call. Local only.
      */
-    public function actingAs(string $surface, ?string $user = null): \Illuminate\Contracts\Auth\Authenticatable
+    public function actingAs(string $surface, ?string $user = null): Authenticatable
     {
         $access = $this->app->make(Access\Access::class);
         $access->requireAvailable();
@@ -110,7 +112,7 @@ final class Recording
         }
     }
 
-    private function finish(\Lantern\Trace\Trace $trace): void
+    private function finish(Trace $trace): void
     {
         try {
             $this->app->make(LifecycleInstrumentation::class)->finish(true);
@@ -132,7 +134,7 @@ final class Recording
     }
 
     /**
-     * @param array<string, mixed> $context
+     * @param  array<string, mixed>  $context
      * @return array<string, mixed>
      */
     private function context(array $context): array

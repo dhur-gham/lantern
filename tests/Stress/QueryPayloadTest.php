@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Lantern\Tests\Stress;
 
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Lantern\Instrumentation\Lifecycle\TraceFormatter;
 use Lantern\Storage\DatabaseTraceStore;
 use Lantern\Trace\Recorder;
@@ -87,7 +89,7 @@ final class QueryPayloadTest extends StressTestCase
     public function test_named_bindings_are_captured_and_secrets_redacted(): void
     {
         $this->app['router']->get('/named', function () {
-            return response()->json(\Illuminate\Support\Facades\DB::select('select :a as a, :password as p, :api_token as t, :Secret_Key as s', ['a' => 1, 'password' => 'hunter2', 'api_token' => 'tok', 'Secret_Key' => 'sk']));
+            return response()->json(DB::select('select :a as a, :password as p, :api_token as t, :Secret_Key as s', ['a' => 1, 'password' => 'hunter2', 'api_token' => 'tok', 'Secret_Key' => 'sk']));
         });
 
         $this->getJson('/named')->assertOk();
@@ -101,7 +103,7 @@ final class QueryPayloadTest extends StressTestCase
 
     public function test_positional_secret_values_are_not_redacted_by_design_but_truncated(): void
     {
-        $this->app['router']->get('/pos', fn () => response()->json(\Illuminate\Support\Facades\DB::select('select ? as p', [str_repeat('s', 500)])));
+        $this->app['router']->get('/pos', fn () => response()->json(DB::select('select ? as p', [str_repeat('s', 500)])));
 
         $this->getJson('/pos')->assertOk();
 
@@ -112,7 +114,7 @@ final class QueryPayloadTest extends StressTestCase
     {
         $this->app['router']->get('/obj', function () {
             try {
-                \Illuminate\Support\Facades\DB::select('select ? as p', [new \stdClass]);
+                DB::select('select ? as p', [new \stdClass]);
             } catch (\Throwable) {
             }
 
@@ -128,7 +130,7 @@ final class QueryPayloadTest extends StressTestCase
         $this->app['router']->get('/many-bindings', function () {
             $ids = range(1, 900);
 
-            return response()->json(['n' => \Illuminate\Support\Facades\DB::table('s_authors')->whereIn('id', $ids)->count()]);
+            return response()->json(['n' => DB::table('s_authors')->whereIn('id', $ids)->count()]);
         });
 
         $this->getJson('/many-bindings')->assertOk()->assertJson(['n' => 10]);
@@ -229,8 +231,8 @@ final class QueryPayloadTest extends StressTestCase
             $r->start(SpanType::Event, 'd'.$d);
         }
         $r->end();
-        \Illuminate\Support\Facades\Schema::dropIfExists('lantern_issues');
-        \Illuminate\Support\Facades\Schema::dropIfExists('lantern_traces');
+        Schema::dropIfExists('lantern_issues');
+        Schema::dropIfExists('lantern_traces');
         foreach (glob(__DIR__.'/../../database/migrations/*.php') as $file) {
             (require $file)->up();
         }

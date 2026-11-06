@@ -35,8 +35,8 @@ final class PlanFlipDetector implements Detector
     private bool $storeResolved = false;
 
     /**
-     * @param array<string, mixed> $config full config('lantern')
-     * @param (Closure(?string, string, array<int|string, mixed>): ?array<string, mixed>)|null $explain replaces EXPLAIN (tests)
+     * @param  array<string, mixed>  $config  full config('lantern')
+     * @param  (Closure(?string, string, array<int|string, mixed>): ?array<string, mixed>)|null  $explain  replaces EXPLAIN (tests)
      */
     public function __construct(
         private readonly array $config,
@@ -149,8 +149,8 @@ final class PlanFlipDetector implements Detector
     }
 
     /**
-     * @param array<string, mixed>|null $existing
-     * @param array{table: ?string, key: ?string, rows: ?int, full_scan: bool}|null $plan
+     * @param  array<string, mixed>|null  $existing
+     * @param  array{table: ?string, key: ?string, rows: ?int, full_scan: bool}|null  $plan
      * @return array<string, mixed>
      */
     private function merge(?array $existing, int $size, float $ms, ?array $plan): array
@@ -166,9 +166,9 @@ final class PlanFlipDetector implements Detector
     }
 
     /**
-     * @param array<string, mixed> $found
-     * @param list<Span> $spans
-     * @param list<array<string, mixed>> $samples
+     * @param  array<string, mixed>  $found
+     * @param  list<Span>  $spans
+     * @param  list<array<string, mixed>>  $samples
      */
     private function issue(string $fp, array $found, array $spans, array $samples, float $slowMs): Issue
     {
@@ -221,7 +221,7 @@ final class PlanFlipDetector implements Detector
     }
 
     /**
-     * @param array<string, mixed> $s
+     * @param  array<string, mixed>  $s
      * @return array<string, mixed>
      */
     private static function out(array $s): array

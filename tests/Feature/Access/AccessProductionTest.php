@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Lantern\Tests\Feature\Access;
 
 use Illuminate\Support\Facades\Route;
+use Lantern\Access\Access;
 
 final class AccessProductionTest extends AccessTestCase
 {
@@ -22,6 +23,6 @@ final class AccessProductionTest extends AccessTestCase
 
     public function test_availability_is_false_in_production(): void
     {
-        $this->assertFalse(\Lantern\Access\Access::available($this->app));
+        $this->assertFalse(Access::available($this->app));
     }
 }

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Lantern\Tests\Feature\Console;
 
+use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Support\Facades\DB;
 use Lantern\Console\IssuesCommand;
 use Lantern\Console\TraceCommand;
@@ -22,7 +23,7 @@ abstract class ConsoleTestCase extends TestCase
         parent::setUp();
 
         $this->loadMigrationsFrom(dirname(__DIR__, 3).'/database/migrations');
-        $kernel = $this->app->make(\Illuminate\Contracts\Console\Kernel::class);
+        $kernel = $this->app->make(Kernel::class);
         $kernel->registerCommand($this->app->make(IssuesCommand::class));
         $kernel->registerCommand($this->app->make(TraceCommand::class));
     }

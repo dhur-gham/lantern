@@ -10,7 +10,7 @@ namespace Lantern\Schema;
 final class IndexNormalizer
 {
     /**
-     * @param list<array<string, mixed>> $rows keys are matched case-insensitively: table, key_name, seq_in_index, column_name, non_unique
+     * @param  list<array<string, mixed>>  $rows  keys are matched case-insensitively: table, key_name, seq_in_index, column_name, non_unique
      * @return array<string, list<array{name: string, columns: list<string>, unique: bool}>> by table; rows without a table go under ''
      */
     public static function fromShowIndexRows(array $rows): array

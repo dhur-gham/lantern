@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Lantern\Tests\Stress;
 
+use Illuminate\Log\Events\MessageLogged;
 use Illuminate\Support\Facades\DB;
 
 /** Storage driver is "database" but storage is unusable; the request must never notice. */
@@ -51,7 +52,7 @@ final class StorageBrokenTest extends StressTestCase
     public function test_db_down_failure_is_logged_once_not_per_request(): void
     {
         $logged = 0;
-        $this->app['events']->listen(\Illuminate\Log\Events\MessageLogged::class, function ($e) use (&$logged) {
+        $this->app['events']->listen(MessageLogged::class, function ($e) use (&$logged) {
             if (str_contains($e->message, 'Lantern storage failed')) {
                 $logged++;
             }

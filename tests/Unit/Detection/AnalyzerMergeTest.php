@@ -5,6 +5,10 @@ declare(strict_types=1);
 namespace Lantern\Tests\Unit\Detection;
 
 use Lantern\Detection\Analyzer;
+use Lantern\Detection\Detectors\DuplicateQueryDetector;
+use Lantern\Detection\Detectors\LazyLoadDetector;
+use Lantern\Detection\Detectors\NPlusOneDetector;
+use Lantern\Detection\Detectors\SlowQueryDetector;
 use Lantern\Detection\Issue;
 use Lantern\Trace\Recorder;
 use Lantern\Trace\SpanType;
@@ -15,10 +19,10 @@ final class AnalyzerMergeTest extends TestCase
 {
     private const CFG = [
         'detectors' => [
-            \Lantern\Detection\Detectors\NPlusOneDetector::class,
-            \Lantern\Detection\Detectors\DuplicateQueryDetector::class,
-            \Lantern\Detection\Detectors\SlowQueryDetector::class,
-            \Lantern\Detection\Detectors\LazyLoadDetector::class,
+            NPlusOneDetector::class,
+            DuplicateQueryDetector::class,
+            SlowQueryDetector::class,
+            LazyLoadDetector::class,
         ],
         'thresholds' => ['n_plus_one_min_repeats' => 5, 'duplicate_min_repeats' => 2, 'slow_query_ms' => 1000]];
 

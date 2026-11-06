@@ -17,9 +17,10 @@ use Lantern\Lantern;
 use Lantern\LanternServiceProvider;
 use Lantern\Tests\Stress\Support\FormController;
 use Lantern\Tests\Stress\Support\QueryMiddleware;
-use Lantern\Tests\Stress\Support\SAuthor;
 use Lantern\Tests\Stress\Support\ScenarioController;
 use Lantern\Tests\Stress\Support\ShortCircuitMiddleware;
+use Lantern\Tests\Stress\Support\SPost;
+use Lantern\Tests\Stress\Support\SVideo;
 use Lantern\Tests\Stress\Support\ThrowingMiddleware;
 use Lantern\Trace\Span;
 use Lantern\Trace\SpanType;
@@ -202,8 +203,8 @@ abstract class StressTestCase extends Orchestra
         DB::table('s_videos')->insert(array_map(fn ($i) => ['title' => 'video'.$i], range(1, 6)));
         $comments = [];
         foreach (range(1, 6) as $i) {
-            $comments[] = ['commentable_type' => \Lantern\Tests\Stress\Support\SPost::class, 'commentable_id' => $i, 'body' => 'c'];
-            $comments[] = ['commentable_type' => \Lantern\Tests\Stress\Support\SVideo::class, 'commentable_id' => $i, 'body' => 'c'];
+            $comments[] = ['commentable_type' => SPost::class, 'commentable_id' => $i, 'body' => 'c'];
+            $comments[] = ['commentable_type' => SVideo::class, 'commentable_id' => $i, 'body' => 'c'];
         }
         DB::table('s_comments')->insert($comments);
     }

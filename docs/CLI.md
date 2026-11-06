@@ -1,6 +1,6 @@
 # CLI reference
 
-Requirements for the agent commands (`issues`, `issue`, `trace`, `diff`, `check`): `LANTERN_ENABLED=true`, `LANTERN_STORAGE_DRIVER=database` and migrations run. Otherwise they exit 2 with `config_error`.
+Requirements for the agent commands (`issues`, `issue`, `trace`, `diff`, `check`, `run`, `scenario`): `LANTERN_ENABLED=true`, `LANTERN_STORAGE_DRIVER=database` and migrations run. Otherwise they exit 2 with `config_error`.
 
 ## Conventions
 
@@ -156,6 +156,53 @@ php artisan lantern:run probes/export.php --repeat=5 --customer=42
 php artisan lantern:run probes/export.php --diff=invoice-export
 php artisan lantern:issues --route='record:*' --format=json
 ```
+
+## lantern:scenario {action} {file?}
+
+Runs an interaction described as data, inside this process: no browser, no web server, no sign-in link. Local only (`APP_ENV=local`), and every database connection is rolled back unless you pass `--commit`. It is `lantern:run` with a generated script, so the output is the same `lantern.run` JSON (one trace per step, `--repeat` medians, `--diff`).
+
+- `lantern:scenario list` shows the scenario files in `lantern/scenarios/` (change it with `lantern.scenarios.path` / `LANTERN_SCENARIOS_PATH`) and whether each one is valid.
+- `lantern:scenario run <file|name> [--repeat=N] [--diff=<trace-id|record-name>] [--commit]` runs one. A bare name resolves to `<directory>/<name>.json`.
+
+A scenario is a JSON object. Unknown keys are rejected, so a typo fails instead of being skipped.
+
+```json
+{
+  "name": "orders-page",
+  "surface": "panel",
+  "session": {"current_merchant_id": 222},
+  "fake": ["queue", "mail", "notification", "http"],
+  "steps": [
+    { "livewire": "App\\Filament\\Resources\\OrderResource\\Pages\\ListOrders",
+      "mount": {},
+      "do": [
+        { "set": "tableSearch", "value": "10023" },
+        { "call": "gotoPage", "args": [2, "page"] }
+      ] },
+    { "request": "GET", "path": "/api/orders/list-orders", "query": {"type": "all"},
+      "headers": {"mr-id": "222"}, "as": {"surface": "api"}, "expect": 200 }
+  ]
+}
+```
+
+- `surface` / `user` (top level, or `as` on a request step) pick a `lantern.access` surface and sign its user in with `Lantern::actingAs()`. Credentials never go in a scenario: a header whose name contains `auth`, `token`, `secret`, `api-key`, `password`, `cookie`, `csrf`, `xsrf`, `session` or `credential` is refused, and no other part of the file (`json`, `query`, `session`) should hold a secret, because the file lives in your project. `session` values are put in the session before the step.
+- A `livewire` step runs `Livewire::test($class, $mount)`, then each `do` item in order: `set` a property, `call` a method with `args`, or `upload` a file into a property (`{"upload": "photo", "file": {"name": "photo.jpg", "width": 2550, "height": 2550, "kb": 3500}}`, or `files` with a list for an array property).
+- A `request` step goes through the HTTP kernel (middleware, form requests, tenant checks), as `GET|POST|PUT|PATCH|DELETE` on a path of this app (never a URL). `json` is a JSON body, `form` a form body (strings, as a browser sends it), `query` the query string, `headers` extra headers, such as a tenant header. `files` (POST only) sends a multipart upload: `{"images": [{"name": "a.jpg", "width": 1200, "height": 800}]}`, a field to a file or a list of files, together with the `form` fields; it cannot be combined with `json`.
+- A file is generated, never read from disk, with Laravel's fake files. `kind` is `image` (default for `.jpg`, `.jpeg`, `.png`, `.gif`, `.webp`, `.bmp`; a real picture of `width` x `height`, default 640 x 480, needs the PHP `gd` extension) or `file` (empty content, with a `mime`). `kb` (default 100) is the size reported to validation rules, and `name` a plain file name. Limits: 10 files per step or request, 10 MB (`kb` 10,240) and 4,000 pixels per side per file. An upload counts as a write for the warning below.
+- `as.via: "token"` (on a request step, with a `sanctum` surface) sends a real Sanctum token and the surface's own headers instead of signing the user in directly, so token lookup and `last_used_at` run as they do for an API client (without it a step skips them and shows about 3 queries fewer than HTTP). The token is deleted after the step, also with `--commit`. A header of the step wins over the surface's.
+- Each step starts signed out and with an empty session, so an earlier step's sign-in cannot carry into the next.
+- A request that answers 400 or above **fails the run** (with the status and the start of the body), unless the step says `"expect": <status>`. A run that only measured a 422 or 403 would report numbers for an error page.
+- Traces are named `<scenario>:<step>:<what>` (`orders-page:01:mount`, `orders-page:01:call gotoPage`, `list-orders:02:GET /api/orders/list-orders`), so `--diff` and `lantern:issues --route='record:orders-page*'` match the same step before and after a change.
+
+Limits and things to know:
+
+- A file is at most 2 MB, a scenario at most 500 steps and a `livewire` step at most 200 `do` items; a longer one is refused so a mistake cannot run for hours.
+- The database is rolled back, **nothing else is**. Events, queued jobs, mail, notifications and HTTP calls to other services that a step triggers really happen (a queued job lands in Redis; an outgoing call leaves the machine). Name what to fake with `"fake": [...]` in the scenario, or for every scenario in `lantern.scenarios.fake`; the two lists are added together. Allowed: `queue`, `bus`, `mail`, `notification`, `http`, `storage` (Laravel's own fakes: jobs are recorded and not run, mail and notifications are not sent, every outgoing HTTP call gets an empty 200, and every disk that is not a local one (S3, FTP, SFTP...) becomes a local folder under `storage/framework/testing`, so an uploaded file never reaches a remote bucket; local disks stay real, because code that builds a path from `storage_path('app')` does not find its files under another root, so files a step writes to a local disk stay there). Events are deliberately not fakeable: faking them would also stop model observers and change the query counts. A run with a write request (anything but GET), or a Livewire step that has `set` or `call` actions, adds a single warning to `scenario.warnings` naming the channels among `queue`, `mail`, `notification` and `http` (and `storage`, when the scenario uploads files) that were not faked (`bus` is optional: it only stops synchronously dispatched jobs from running). The output always lists what was faked (`scenario.faked`). Fakes last for the process, which is one command run.
+- The app's own rate limiter applies by default, because the request goes through its middleware, and its counters live in the cache, outside the rollback. A scenario that sends more requests than the limit gets a 429 and fails (merchant-portal: a 300-step run stopped at its 121st request), and it uses up the quota of the dev user for a minute. `"throttle": false` (or `lantern.scenarios.throttle` set to `false` for every scenario; the scenario's own value wins) replaces Laravel's `throttle:` middleware, including its Redis variant, with a pass-through for that run: no 429, no quota used, every other middleware still runs. A rate limiter you wrote yourself still applies. The output shows `scenario.throttle`. When to use it: only for a run (or `--repeat`) longer than the app's limit. Keep it on when what you are investigating is login, OTP, 429 responses or rate limiting itself, or when the cache store is the database (the limiter's own reads and writes would then be missing from the query counts). Compare a before and after with the same throttle setting. With it off, `scenario.throttle_skipped` counts how many times the middleware was skipped: 0 means the switch changed nothing.
+- Every run reads back what it wrote: before the first write to a table, on any connection, the run records its row count and a checksum of its contents, and after the rollback it reads them again (`scenario.rollback_check`: `ok`, `checked`, `problems`, `unattributed`). The checksum is `CHECKSUM TABLE` on MySQL and MariaDB (tables up to 200,000 rows) and a hash computed in PHP on every other driver (tables up to 20,000 rows); a bigger table gets row counts only and says `not checked`. The run fails (status `failed`, exit 1) when a table differs, when a table cannot be read (a failed read is never counted as a pass; set `lantern.scenarios.verify_rollback` to `false` if a table really cannot be read), or when a statement cannot be rolled back (`CREATE`, `ALTER`, `DROP`, `TRUNCATE` and `RENAME` commit implicitly on MySQL). The tables come from the SQL, so a connection prefix is handled, Lantern's own tables are left out, and no connection is skipped: writes on a connection that Lantern's storage shares with the app are checked too. A write that cannot be attributed to a table (a MySQL multi-table `DELETE t1 FROM t1 JOIN ...`, for example) is listed in `unattributed` and in `scenario.warnings`: the check does not cover it. A row changed by another process during the run would show up too. It is skipped with `--commit` or `lantern.scenarios.verify_rollback` set to `false` (`rollback_check` is then `null`), and it reads the tables with queries that are not recorded, so the traces are the same with or without it. It reads each table twice, once before its first write and once after the rollback (merchant-portal's biggest, `op_items` with 86,000 rows: about 70 ms for the count and 260 ms for the checksum).
+- Step failures stop the run and the traces recorded so far are kept; exit code 1. Bad files, unknown surfaces and non-local environments exit 2.
+
+What it does not reproduce: Alpine and other browser JavaScript (including requests it fires, `wire:poll` and `wire:init`), the HTTP round trips of Livewire's browser uploader (the file is set on the component directly), and the content of an uploaded file (a picture is generated, a plain file is empty). A step signed in with `as` skips token validation unless it uses `via: "token"` (measured 21 against 24 queries on a merchant-portal route). Use the browser path for problems that only exist in the browser.
 
 ## lantern:login {surface?}
 

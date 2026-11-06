@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Lantern\Tests\Unit\Trace;
 
 use Lantern\Trace\Recorder;
-use Lantern\Trace\Span;
 use Lantern\Trace\SpanType;
 use PHPUnit\Framework\TestCase;
 
@@ -15,7 +14,7 @@ final class RecorderTest extends TestCase
 
     public function test_begin_creates_root_request_span(): void
     {
-        $r = new Recorder();
+        $r = new Recorder;
         $trace = $r->begin(['a' => 1], 0);
 
         $this->assertTrue($r->isActive());
@@ -29,7 +28,7 @@ final class RecorderTest extends TestCase
 
     public function test_nesting_and_parent_ids(): void
     {
-        $r = new Recorder();
+        $r = new Recorder;
         $t = $r->begin();
         $a = $r->start(SpanType::Middleware, 'a');
         $b = $r->start(SpanType::Query, 'b');
@@ -45,7 +44,7 @@ final class RecorderTest extends TestCase
 
     public function test_self_time(): void
     {
-        $r = new Recorder();
+        $r = new Recorder;
         $t = $r->begin(['x' => 1], 0);
         $a = $r->start(SpanType::Controller, 'a', [], 10 * self::MS);
         $r->recordClosed(SpanType::Query, 'q', 20 * self::MS, 30 * self::MS);
@@ -58,7 +57,7 @@ final class RecorderTest extends TestCase
 
     public function test_self_time_floors_at_zero(): void
     {
-        $r = new Recorder();
+        $r = new Recorder;
         $t = $r->begin([], 0);
         $r->start(SpanType::Controller, 'a', [], 0);
         $r->recordClosed(SpanType::Query, 'q', 0, 100 * self::MS);
@@ -70,7 +69,7 @@ final class RecorderTest extends TestCase
 
     public function test_stop_closes_open_descendants(): void
     {
-        $r = new Recorder();
+        $r = new Recorder;
         $r->begin();
         $a = $r->start(SpanType::Middleware, 'a');
         $b = $r->start(SpanType::Query, 'b');
@@ -85,7 +84,7 @@ final class RecorderTest extends TestCase
 
     public function test_inactive_is_noop(): void
     {
-        $r = new Recorder();
+        $r = new Recorder;
         $s = $r->start(SpanType::Query, 'x', ['k' => 1]);
         $this->assertTrue($s->isStopped());
         $this->assertNull($r->current());
@@ -100,7 +99,7 @@ final class RecorderTest extends TestCase
 
     public function test_record_closed_ordering_and_call_site(): void
     {
-        $r = new Recorder();
+        $r = new Recorder;
         $t = $r->begin([], 0);
         $a = $r->start(SpanType::Controller, 'a', [], 0);
         $q1 = $r->recordClosed(SpanType::Query, 'q1', 1, 2, ['sql' => 'x'], ['file' => 'f.php', 'line' => 3]);
@@ -116,7 +115,7 @@ final class RecorderTest extends TestCase
 
     public function test_measure_stops_on_exception(): void
     {
-        $r = new Recorder();
+        $r = new Recorder;
         $t = $r->begin();
         try {
             $r->measure(SpanType::Cache, 'c', function () {
@@ -133,7 +132,7 @@ final class RecorderTest extends TestCase
 
     public function test_end_stops_everything(): void
     {
-        $r = new Recorder();
+        $r = new Recorder;
         $r->begin();
         $a = $r->start(SpanType::Job, 'a');
         $t = $r->end();
@@ -147,7 +146,7 @@ final class RecorderTest extends TestCase
 
     public function test_reset_drops_everything_and_begin_resets(): void
     {
-        $r = new Recorder();
+        $r = new Recorder;
         $first = $r->begin();
         $r->start(SpanType::Job, 'a');
         $r->reset();
@@ -164,7 +163,7 @@ final class RecorderTest extends TestCase
 
     public function test_to_array_tree_shape(): void
     {
-        $r = new Recorder();
+        $r = new Recorder;
         $t = $r->begin([], 0);
         $a = $r->start(SpanType::Route, 'a', ['m' => 1], 0);
         $r->recordClosed(SpanType::Query, 'q', 0, 5 * self::MS, [], ['file' => 'f', 'line' => 1]);
@@ -189,11 +188,10 @@ final class RecorderTest extends TestCase
 
     public function test_peak_memory_and_total(): void
     {
-        $r = new Recorder();
+        $r = new Recorder;
         $t = $r->begin();
         $r->end();
         $this->assertGreaterThan(0, $t->peakMemory());
         $this->assertGreaterThanOrEqual(0.0, $t->totalMs());
     }
 }
-

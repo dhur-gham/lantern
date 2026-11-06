@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Lantern\Tests\Feature\Explain;
 
+use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -11,6 +12,7 @@ use Lantern\Detection\Analyzer;
 use Lantern\Instrumentation\Lifecycle\LifecycleInstrumentation;
 use Lantern\Tests\Feature\Agent\AgentTestCase;
 use Lantern\Trace\Recorder;
+use Lantern\Trace\Span;
 use Lantern\Trace\SpanType;
 use Lantern\Trace\Trace;
 
@@ -58,7 +60,7 @@ final class RawBindingsTest extends AgentTestCase
         return $this->recorder()->begin(['kind' => 'request', 'method' => 'GET', 'path' => '/orders', 'status' => 200]);
     }
 
-    /** @return list<\Lantern\Trace\Span> */
+    /** @return list<Span> */
     private function queries(Trace $trace): array
     {
         return array_values(array_filter($trace->spans(), fn ($s) => $s->type === SpanType::Query));
@@ -182,7 +184,7 @@ final class RawBindingsTest extends AgentTestCase
     public function test_a_slow_query_takes_the_place_of_the_fastest_held_shape_when_the_slots_are_used_up(): void
     {
         $trace = $this->begin();
-        $fire = fn (string $sql, array $bindings, float $ms) => event(new \Illuminate\Database\Events\QueryExecuted($sql, $bindings, $ms, DB::connection()));
+        $fire = fn (string $sql, array $bindings, float $ms) => event(new QueryExecuted($sql, $bindings, $ms, DB::connection()));
 
         for ($i = 0; $i < 25; $i++) {
             $fire("select id as shape_{$i} from r_orders where customer_id = ?", [$i], 1.0 + $i / 100);

@@ -10,6 +10,7 @@ use Lantern\Storage\DatabaseTraceStore;
 use Lantern\Storage\TraceQueries;
 use Lantern\Tests\TestCase;
 use Lantern\Trace\Recorder;
+use Lantern\Trace\SpanType;
 
 final class RealPagesTest extends TestCase
 {
@@ -41,7 +42,7 @@ final class RealPagesTest extends TestCase
     {
         $recorder = new Recorder;
         $trace = $recorder->begin(['kind' => 'request', 'method' => 'GET', 'path' => '/x', 'status' => 200]);
-        $child = $recorder->start(\Lantern\Trace\SpanType::View, 'child');
+        $child = $recorder->start(SpanType::View, 'child');
         $recorder->stop($child);
         $recorder->end();
         (new DatabaseTraceStore($this->app['db'], null, false))->store($trace, []);
@@ -85,4 +86,3 @@ final class RealPagesTest extends TestCase
         $this->assertMatchesRegularExpression('/(Z|[+-]\d{2}:\d{2})$/', $row['started_at']);
     }
 }
-

@@ -4,8 +4,7 @@ declare(strict_types=1);
 
 namespace Lantern\Tests\Stress;
 
-use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\LazyLoadingViolationException;
+use Lantern\Tests\Stress\Support\SPost;
 
 /** App that never enabled prevention: Lantern must not introduce exceptions. */
 final class LazyLoadNeverEnabledTest extends StressTestCase
@@ -25,7 +24,7 @@ final class LazyLoadNeverEnabledTest extends StressTestCase
     public function test_model_created_in_request_does_not_trigger_violation(): void
     {
         $this->app['router']->get('/create-then-lazy', function () {
-            $post = \Lantern\Tests\Stress\Support\SPost::create(['author_id' => 1, 'title' => 'x']);
+            $post = SPost::create(['author_id' => 1, 'title' => 'x']);
 
             return $post->author->name;
         });
@@ -35,7 +34,7 @@ final class LazyLoadNeverEnabledTest extends StressTestCase
 
     public function test_single_model_lazy_load_does_not_throw(): void
     {
-        $this->app['router']->get('/single', fn () => \Lantern\Tests\Stress\Support\SPost::first()->author->name);
+        $this->app['router']->get('/single', fn () => SPost::first()->author->name);
 
         $this->get('/single')->assertOk();
     }

@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Lantern\Tests\Feature\Console;
 
+use Illuminate\Support\Facades\Artisan;
+
 final class TraceCommandTest extends ConsoleTestCase
 {
     public function test_empty_storage_message(): void
@@ -28,8 +30,8 @@ final class TraceCommandTest extends ConsoleTestCase
         $this->seedTrace('t1', 40, '2026-01-01 10:00:00');
         $this->seedIssue('a', 'n_plus_one', 'high', 50.0, 't1');
 
-        $this->assertSame(0, \Illuminate\Support\Facades\Artisan::call('lantern:trace', ['id' => 't1']));
-        $out = \Illuminate\Support\Facades\Artisan::output();
+        $this->assertSame(0, Artisan::call('lantern:trace', ['id' => 't1']));
+        $out = Artisan::output();
         $this->assertStringContainsString('GET /posts', $out);
         $this->assertStringContainsString('select * from posts', $out);
         $this->assertStringContainsString('Issues (1)', $out);

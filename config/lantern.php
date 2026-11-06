@@ -1,5 +1,13 @@
 <?php
 
+use Lantern\Detection\Detectors\DuplicateQueryDetector;
+use Lantern\Detection\Detectors\LazyLoadDetector;
+use Lantern\Detection\Detectors\MemoryHogDetector;
+use Lantern\Detection\Detectors\MissingIndexDetector;
+use Lantern\Detection\Detectors\NPlusOneDetector;
+use Lantern\Detection\Detectors\PlanFlipDetector;
+use Lantern\Detection\Detectors\SlowQueryDetector;
+
 return [
     // Master switch. Off by default.
     'enabled' => env('LANTERN_ENABLED', false),
@@ -37,13 +45,13 @@ return [
 
     // Detector classes run against each finished trace; missing classes are skipped.
     'detectors' => [
-        \Lantern\Detection\Detectors\NPlusOneDetector::class,
-        \Lantern\Detection\Detectors\DuplicateQueryDetector::class,
-        \Lantern\Detection\Detectors\SlowQueryDetector::class,
-        \Lantern\Detection\Detectors\MemoryHogDetector::class,
-        \Lantern\Detection\Detectors\MissingIndexDetector::class,
-        \Lantern\Detection\Detectors\PlanFlipDetector::class,
-        \Lantern\Detection\Detectors\LazyLoadDetector::class,
+        NPlusOneDetector::class,
+        DuplicateQueryDetector::class,
+        SlowQueryDetector::class,
+        MemoryHogDetector::class,
+        MissingIndexDetector::class,
+        PlanFlipDetector::class,
+        LazyLoadDetector::class,
     ],
 
     // Detector classes to turn off. Detectors added in a release newer than your published config are merged into
@@ -175,6 +183,18 @@ return [
         // Sign-in links skip the Login event by default: listeners may send mail or write audit rows.
         'fire_login_event' => false,
         'surfaces' => [],
+    ],
+
+    // Scenario files for lantern:scenario (JSON; see docs/CLI.md). null = lantern/scenarios in the project root.
+    'scenarios' => [
+        'path' => env('LANTERN_SCENARIOS_PATH'),
+        // Faked for every scenario: any of queue, bus, mail, notification, http, storage (non-local disks only). A scenario can add its own "fake" list.
+        'fake' => [],
+        // false switches off Laravel's `throttle:` middleware for scenarios (a scenario can set "throttle" itself).
+        'throttle' => true,
+        // Count the rows (and on MySQL checksum the contents) of every table a scenario wrote to, before and after the
+        // rollback, and fail the run when they differ.
+        'verify_rollback' => true,
     ],
 
     'retention' => [

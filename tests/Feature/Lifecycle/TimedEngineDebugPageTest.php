@@ -53,4 +53,3 @@ final class TimedEngineDebugPageTest extends LifecycleTestCase
         $this->assertStringNotContainsString('<abbr title=\"ReflectionException\">', (string) $response->getContent());
     }
 }
-

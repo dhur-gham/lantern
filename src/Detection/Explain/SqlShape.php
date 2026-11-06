@@ -33,8 +33,7 @@ final class SqlShape
         public readonly array $predicates,
         public readonly array $common,
         public readonly bool $orAcrossTables,
-    ) {
-    }
+    ) {}
 
     public static function parse(string $sql): self
     {

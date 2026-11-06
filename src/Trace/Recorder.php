@@ -104,8 +104,8 @@ final class Recorder
     }
 
     /**
-     * @param array<string, mixed> $meta
-     * @param array{file: string, line: int, function?: string}|null $callSite
+     * @param  array<string, mixed>  $meta
+     * @param  array{file: string, line: int, function?: string}|null  $callSite
      */
     public function recordClosed(SpanType $type, string $name, int $startNs, int $endNs, array $meta = [], ?array $callSite = null): Span
     {

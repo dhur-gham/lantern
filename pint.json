@@ -1,0 +1,7 @@
+{
+    "preset": "laravel",
+    "exclude": [
+        "tests/Feature/Filament/fixtures",
+        "tests/Feature/Query/fixtures"
+    ]
+}

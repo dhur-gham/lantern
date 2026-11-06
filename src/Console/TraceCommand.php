@@ -7,6 +7,7 @@ namespace Lantern\Console;
 use Lantern\Agent\AgentCommand;
 use Lantern\Agent\AgentException;
 use Lantern\Agent\Findings;
+use Lantern\Agent\Output;
 use Lantern\Agent\Reader;
 use Lantern\Instrumentation\Lifecycle\TraceFormatter;
 use Symfony\Component\Console\Output\OutputInterface;
@@ -117,7 +118,7 @@ final class TraceCommand extends AgentCommand
         if ($total > count($spans)) {
             $payload['hint'] = sprintf('%d of %d spans shown (slowest first); raise --limit or set --min-ms.', count($spans), $total);
         }
-        $payload['spans'] = \Lantern\Agent\Output::project($spans, $fields);
+        $payload['spans'] = Output::project($spans, $fields);
 
         $this->emit($payload, 'spans', $fields ?? ['id', 'type', 'name', 'duration_ms', 'self_ms', 'call_site']);
 
@@ -148,7 +149,7 @@ final class TraceCommand extends AgentCommand
     }
 
     /**
-     * @param array<string, mixed> $node
+     * @param  array<string, mixed>  $node
      * @return list<string>
      */
     private function lines(array $node, int $depth): array

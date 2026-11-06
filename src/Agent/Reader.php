@@ -12,9 +12,7 @@ final class Reader
 {
     public const MAX_ROWS = 500;
 
-    public function __construct(private readonly TraceQueries $queries)
-    {
-    }
+    public function __construct(private readonly TraceQueries $queries) {}
 
     public static function since(?string $value): ?Carbon
     {
@@ -34,7 +32,7 @@ final class Reader
     }
 
     /**
-     * @param array<string, mixed> $filters
+     * @param  array<string, mixed>  $filters
      * @return array{0: list<array<string, mixed>>, 1: int, 2: bool} page of findings, total matching, whether total is exact
      */
     public function issuesPage(array $filters, int $limit, int $offset, ?Carbon $since): array
@@ -86,7 +84,7 @@ final class Reader
     }
 
     /**
-     * @param array<string, mixed> $finding
+     * @param  array<string, mixed>  $finding
      * @return array<string, mixed>
      */
     private function evidence(array $finding, bool $withBindings): array
@@ -133,7 +131,7 @@ final class Reader
      * Plan-derived fields of an issue's meta; each is present only when known. `read_ratio` is rows read per row
      * returned and needs an actual returned count.
      *
-     * @param array<string, mixed> $meta
+     * @param  array<string, mixed>  $meta
      * @return array<string, mixed>
      */
     public static function planEvidence(array $meta): array
@@ -164,8 +162,8 @@ final class Reader
     }
 
     /**
-     * @param array<string, mixed>|null $node
-     * @param list<int> $ids
+     * @param  array<string, mixed>|null  $node
+     * @param  list<int>  $ids
      * @return array<string, mixed>|null
      */
     private function findNode(?array $node, array $ids): ?array
@@ -188,7 +186,7 @@ final class Reader
     /**
      * Resolves an id, 'last', or the slowest of the recent traces. `$filters` narrow the latest/slowest lookup.
      *
-     * @param array<string, mixed> $filters
+     * @param  array<string, mixed>  $filters
      */
     public function trace(?string $id, bool $slow = false, array $filters = []): array
     {
@@ -231,7 +229,7 @@ final class Reader
     }
 
     /**
-     * @param list<string> $ids issue ids
+     * @param  list<string>  $ids  issue ids
      * @return list<string> those that are resolved
      */
     public function resolvedIds(array $ids): array
@@ -246,7 +244,7 @@ final class Reader
     }
 
     /**
-     * @param array<string, mixed> $trace
+     * @param  array<string, mixed>  $trace
      * @return list<array<string, mixed>> issues embedded in the trace, as compact findings keyed by id
      */
     public function traceFindings(array $trace): array
@@ -261,7 +259,7 @@ final class Reader
     }
 
     /**
-     * @param array<string, mixed> $trace
+     * @param  array<string, mixed>  $trace
      * @return array<string, mixed>
      */
     public function summary(array $trace, int $top = 10): array
@@ -338,7 +336,7 @@ final class Reader
     /**
      * Flat span list: the slowest `limit` spans above `minMs`, in recorded order.
      *
-     * @param array<string, mixed> $trace
+     * @param  array<string, mixed>  $trace
      * @return array{0: list<array<string, mixed>>, 1: int} spans and matching total
      */
     public function spans(array $trace, float $minMs, int $limit): array
@@ -374,7 +372,7 @@ final class Reader
     /**
      * Nested tree with repeated sibling queries collapsed into one node.
      *
-     * @param array<string, mixed>|null $node
+     * @param  array<string, mixed>|null  $node
      * @return array<string, mixed>|null
      */
     public function tree(?array $node, int $depth, int $level = 0): ?array
@@ -437,7 +435,7 @@ final class Reader
     }
 
     /**
-     * @param array<string, mixed>|null $node
+     * @param  array<string, mixed>|null  $node
      * @return list<array<string, mixed>>
      */
     private function flatNodes(?array $node, bool $withParent = false, ?int $parent = null): array

@@ -18,7 +18,6 @@ class DisabledTest extends LifecycleTestCase
 
         $this->assertFalse($this->app->bound(Recorder::class));
     }
-
 }
 
 class KillSwitchTest extends LifecycleTestCase

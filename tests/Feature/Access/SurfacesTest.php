@@ -7,20 +7,19 @@ namespace Lantern\Tests\Feature\Access;
 use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Route;
-use Laravel\Sanctum\PersonalAccessToken;
+use Lantern\Access\ProvidesCredentials;
 use Lantern\Access\ProvidesUser;
 use Lantern\Facades\Lantern;
+use Laravel\Sanctum\PersonalAccessToken;
 
-final class GuardedCredentials implements \Lantern\Access\ProvidesCredentials, ProvidesUser
+final class GuardedCredentials implements ProvidesCredentials, ProvidesUser
 {
     public function issue(array $subject): array
     {
         return ['headers' => ['X-API-KEY' => 'k']];
     }
 
-    public function revoke(array $issued): void
-    {
-    }
+    public function revoke(array $issued): void {}
 
     public function user(array $subject): Authenticatable
     {

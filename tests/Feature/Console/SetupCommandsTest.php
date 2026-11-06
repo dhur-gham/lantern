@@ -4,9 +4,13 @@ declare(strict_types=1);
 
 namespace Lantern\Tests\Feature\Console;
 
+use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\ServiceProvider;
 use Lantern\Console\InstallCommand;
 use Lantern\Console\StatusCommand;
+use Lantern\Lantern;
+use Lantern\LanternServiceProvider;
 use Lantern\Tests\TestCase;
 
 final class SetupCommandsTest extends TestCase
@@ -15,7 +19,7 @@ final class SetupCommandsTest extends TestCase
     {
         parent::setUp();
 
-        $kernel = $this->app->make(\Illuminate\Contracts\Console\Kernel::class);
+        $kernel = $this->app->make(Kernel::class);
         $kernel->registerCommand($this->app->make(StatusCommand::class));
         $kernel->registerCommand($this->app->make(InstallCommand::class));
     }
@@ -44,7 +48,7 @@ final class SetupCommandsTest extends TestCase
     {
         config(['lantern.enabled' => true, 'lantern.kill_switch' => false, 'lantern.storage.driver' => 'database', 'lantern.keep_rate' => 1, 'app.url' => 'https://example.com']);
         $this->app['env'] = 'local';
-        \Lantern\Lantern::flush();
+        Lantern::flush();
 
         Artisan::call('lantern:status');
         $this->assertStringContainsString('is not loopback', Artisan::output());
@@ -54,10 +58,10 @@ final class SetupCommandsTest extends TestCase
         $this->assertStringNotContainsString('is not loopback', Artisan::output());
 
         config(['app.url' => 'https://example.com']);
-        \Lantern\Lantern::auth(fn () => false);
+        Lantern::auth(fn () => false);
         Artisan::call('lantern:status');
         $this->assertStringNotContainsString('is not loopback', Artisan::output());
-        \Lantern\Lantern::flush();
+        Lantern::flush();
     }
 
     public function test_status_is_quiet_when_configured(): void
@@ -95,8 +99,8 @@ final class SetupCommandsTest extends TestCase
     {
         $path = base_path('.env');
         $had = is_file($path) ? file_get_contents($path) : null;
-        file_put_contents($path, "APP_NAME=x
-");
+        file_put_contents($path, 'APP_NAME=x
+');
 
         try {
             Artisan::call('lantern:install', ['--local' => true]);
@@ -116,7 +120,7 @@ final class SetupCommandsTest extends TestCase
 
     public function test_migrations_publish_under_their_packaged_names(): void
     {
-        $paths = \Illuminate\Support\ServiceProvider::pathsToPublish(\Lantern\LanternServiceProvider::class, 'lantern-migrations');
+        $paths = ServiceProvider::pathsToPublish(LanternServiceProvider::class, 'lantern-migrations');
         $this->assertSame([database_path('migrations')], array_values($paths));
 
         $source = (string) array_key_first($paths);

@@ -114,14 +114,10 @@ final class IssuesCommand extends AgentCommand
             $payload['next'] = 'php artisan lantern:issue '.$findings[0]['id'].' --format=json';
         } elseif ($total === 0 && $this->format() !== 'table') {
             $payload['hint'] = match (true) {
-                $hidden > 0
-                    => "No open issues match; $hidden resolved issue".($hidden === 1 ? ' is' : 's are').' hidden. Pass --include-resolved to list them.',
-                $listsAll && ! $narrowed && isset($scope['app'])
-                    => 'No issues stored for app "'.$scope['app'].'". Pass --all-apps to include other apps, or run the app with LANTERN_ENABLED=true and LANTERN_STORAGE_DRIVER=database, hit the route, then retry.',
-                $listsAll && ! $narrowed
-                    => 'No issues stored. Run the app with LANTERN_ENABLED=true and LANTERN_STORAGE_DRIVER=database, hit the route, then retry.',
-                $sql !== ''
-                    => 'No issue is recorded on a query with this shape. Run lantern:match with the same SQL to see where it runs, or widen with --all-apps or a longer --since.',
+                $hidden > 0 => "No open issues match; $hidden resolved issue".($hidden === 1 ? ' is' : 's are').' hidden. Pass --include-resolved to list them.',
+                $listsAll && ! $narrowed && isset($scope['app']) => 'No issues stored for app "'.$scope['app'].'". Pass --all-apps to include other apps, or run the app with LANTERN_ENABLED=true and LANTERN_STORAGE_DRIVER=database, hit the route, then retry.',
+                $listsAll && ! $narrowed => 'No issues stored. Run the app with LANTERN_ENABLED=true and LANTERN_STORAGE_DRIVER=database, hit the route, then retry.',
+                $sql !== '' => 'No issue is recorded on a query with this shape. Run lantern:match with the same SQL to see where it runs, or widen with --all-apps or a longer --since.',
                 default => 'No issues match these filters; drop --type, --severity, --since, --path, --route or --status.',
             };
         }

@@ -4,10 +4,14 @@ namespace Lantern\Console;
 
 use Composer\InstalledVersions;
 use Illuminate\Console\Command;
+use Lantern\Access\Access;
+use Lantern\Access\AccessTokens;
+use Lantern\Access\HostCheck;
 use Lantern\Lantern;
 use Lantern\LanternServiceProvider;
-use Lantern\Storage\MigrationGuard;
 use Lantern\Sampling\Sampler;
+use Lantern\Storage\MigrationGuard;
+use Symfony\Component\Console\Output\OutputInterface;
 
 class StatusCommand extends Command
 {
@@ -30,8 +34,8 @@ class StatusCommand extends Command
                 'version' => LanternServiceProvider::VERSION,
                 'migration_skip' => $migrationSkip,
                 'access' => $this->access($enabled),
-            ], JSON_UNESCAPED_SLASHES)."
-", false, \Symfony\Component\Console\Output\OutputInterface::OUTPUT_RAW);
+            ], JSON_UNESCAPED_SLASHES).'
+', false, OutputInterface::OUTPUT_RAW);
 
             return self::SUCCESS;
         }
@@ -110,29 +114,29 @@ class StatusCommand extends Command
         $hostVerified = null;
         $warnings = [];
         if ($surfaces === 0) {
-            return ['available' => $enabled && \Lantern\Access\Access::available($this->laravel), 'surfaces' => 0, 'cache_store' => null, 'host_verified' => null, 'warnings' => []];
+            return ['available' => $enabled && Access::available($this->laravel), 'surfaces' => 0, 'cache_store' => null, 'host_verified' => null, 'warnings' => []];
         }
 
         try {
-            $store = $this->laravel->make(\Lantern\Access\AccessTokens::class)->storeName();
+            $store = $this->laravel->make(AccessTokens::class)->storeName();
         } catch (\Throwable) {
         }
         if ($store === 'ArrayStore') {
             $warnings[] = 'The access cache store is "array": sign-in links minted by lantern:login are lost before the browser opens them. Set LANTERN_ACCESS_CACHE_STORE (or CACHE_STORE) to file, redis or database.';
         }
-        if ($enabled && \Lantern\Access\Access::available($this->laravel)) {
+        if ($enabled && Access::available($this->laravel)) {
             $url = (string) config('app.url');
             if (parse_url($url, PHP_URL_HOST) === null) {
                 $warnings[] = 'APP_URL has no host ("'.$url.'"): lantern:login links would not open the right site. Set APP_URL to the address the browser uses.';
             } else {
-                $hostVerified = $this->laravel->make(\Lantern\Access\HostCheck::class)->lastSeen() !== null;
+                $hostVerified = $this->laravel->make(HostCheck::class)->lastSeen() !== null;
                 if (! $hostVerified) {
-                    $warnings[] = \Lantern\Access\HostCheck::HINT;
+                    $warnings[] = HostCheck::HINT;
                 }
             }
         }
 
-        return ['available' => $enabled && \Lantern\Access\Access::available($this->laravel), 'surfaces' => $surfaces, 'cache_store' => $store, 'host_verified' => $hostVerified, 'warnings' => $warnings];
+        return ['available' => $enabled && Access::available($this->laravel), 'surfaces' => $surfaces, 'cache_store' => $store, 'host_verified' => $hostVerified, 'warnings' => $warnings];
     }
 
     private function isLoopbackUrl(string $url): bool

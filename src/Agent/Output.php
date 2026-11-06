@@ -15,8 +15,8 @@ final class Output
     private const JSON = JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_PARTIAL_OUTPUT_ON_ERROR | JSON_INVALID_UTF8_SUBSTITUTE;
 
     /**
-     * @param array<string, mixed> $payload
-     * @param list<string>|null $columns columns for the items table (table/markdown); null = derive
+     * @param  array<string, mixed>  $payload
+     * @param  list<string>|null  $columns  columns for the items table (table/markdown); null = derive
      */
     public static function render(string $format, array $payload, ?string $items = null, ?array $columns = null, bool $pretty = false): string
     {
@@ -29,8 +29,8 @@ final class Output
     }
 
     /**
-     * @param list<array<string, mixed>> $rows
-     * @param list<string>|null $fields
+     * @param  list<array<string, mixed>>  $rows
+     * @param  list<string>|null  $fields
      * @return list<array<string, mixed>>
      */
     public static function project(array $rows, ?array $fields): array
@@ -68,7 +68,7 @@ final class Output
     }
 
     /**
-     * @param array<string, mixed> $payload
+     * @param  array<string, mixed>  $payload
      * @return array{0: array<string, string>, 1: array<string, list<array<string, string>>>}
      */
     private static function split(array $payload, ?string $items, ?array $columns): array
@@ -137,8 +137,8 @@ final class Output
     }
 
     /**
-     * @param list<string> $headers
-     * @param list<array<int, string>> $rows
+     * @param  list<string>  $headers
+     * @param  list<array<int, string>>  $rows
      */
     private static function drawTable(array $headers, array $rows): string
     {
@@ -152,7 +152,7 @@ final class Output
     }
 
     /**
-     * @param list<array<string, string>> $rows
+     * @param  list<array<string, string>>  $rows
      * @return list<string>
      */
     private static function union(array $rows): array
@@ -168,7 +168,7 @@ final class Output
     }
 
     /**
-     * @param array<int|string, mixed> $a
+     * @param  array<int|string, mixed>  $a
      * @return array<string, string>
      */
     public static function flat(array $a, string $prefix = ''): array

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Lantern\Console;
 
+use Illuminate\Support\Carbon;
 use Lantern\Agent\AgentCommand;
 use Lantern\Agent\AgentException;
 use Lantern\Agent\Findings;
@@ -49,7 +50,7 @@ final class CheckCommand extends AgentCommand
             $traces = array_values(array_filter($traces, fn (array $t): bool => ($t['route'] ?? null) === $route || ltrim((string) ($t['path'] ?? ''), '/') === $needle));
         }
         if ($since !== null) {
-            $traces = array_values(array_filter($traces, fn (array $t): bool => \Illuminate\Support\Carbon::parse($t['started_at'])->greaterThanOrEqualTo($since)));
+            $traces = array_values(array_filter($traces, fn (array $t): bool => Carbon::parse($t['started_at'])->greaterThanOrEqualTo($since)));
         }
 
         $issues = $this->scopedIssues($reader, $traces, $route !== null || isset($scope['path_is']) || isset($scope['status']), $since, $scope);
@@ -184,11 +185,11 @@ final class CheckCommand extends AgentCommand
     }
 
     /**
-     * @param list<array<string, mixed>> $traces
-     * @param array<string, mixed> $scope
+     * @param  list<array<string, mixed>>  $traces
+     * @param  array<string, mixed>  $scope
      * @return list<array<string, mixed>>
      */
-    private function scopedIssues(Reader $reader, array $traces, bool $byTraces, ?\Illuminate\Support\Carbon $since, array $scope = []): array
+    private function scopedIssues(Reader $reader, array $traces, bool $byTraces, ?Carbon $since, array $scope = []): array
     {
         if ($byTraces) {
             $out = [];
@@ -209,7 +210,7 @@ final class CheckCommand extends AgentCommand
     }
 
     /**
-     * @param array<string, mixed> $f
+     * @param  array<string, mixed>  $f
      * @return array<string, mixed>
      */
     private function issueViolation(string $rule, array $f): array

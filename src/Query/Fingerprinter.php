@@ -97,7 +97,7 @@ final class Fingerprinter
                 continue;
             }
 
-            if (ctype_alpha($c) || $c === '_') {
+            if (self::isIdentifierStart($c)) {
                 preg_match('/\G[A-Za-z_][A-Za-z0-9_$]*/', $sql, $m, 0, $i);
                 $out .= strtolower($m[0]);
                 $i += strlen($m[0]);
@@ -141,7 +141,7 @@ final class Fingerprinter
 
     private function wordBoundaryBefore(string $s, int $pos): bool
     {
-        return $pos === 0 || ! (ctype_alnum($s[$pos - 1]) || $s[$pos - 1] === '_');
+        return $pos === 0 || ! (self::isIdentifierStart($s[$pos - 1]) || ctype_digit($s[$pos - 1]));
     }
 
     private function collapseIn(string $s): string
@@ -248,6 +248,15 @@ final class Fingerprinter
         }
 
         return $len;
+    }
+
+    /**
+     * ASCII letters and underscore only. ctype_alpha() also accepts accented bytes under a UTF-8 locale (a developer
+     * machine's default, unlike the C locale of most CI), but the identifier pattern above only matches ASCII.
+     */
+    private static function isIdentifierStart(string $c): bool
+    {
+        return ($c >= 'a' && $c <= 'z') || ($c >= 'A' && $c <= 'Z') || $c === '_';
     }
 
     private function signIsUnary(string $out): bool

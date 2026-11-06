@@ -96,3 +96,14 @@ Surface keys (name them as you like, for example `panel` and `api`):
 `config/lantern-access.php` (written by `php artisan lantern:init --write`) returns the same `surfaces` array on its own. It is merged into `lantern.access.surfaces`; a surface of the same name in `config/lantern.php` wins. It is easy to keep out of git.
 
 The dashboard gate is code, not config: `Lantern::auth(fn ($request) => ...)`. Without a gate, only `APP_ENV=local` requests from a loopback peer (127.0.0.1, ::1) are allowed; every other environment or client gets 403. Behind Docker or a remote dev host, set `Lantern::auth`.
+
+## Scenarios
+
+Used by `lantern:scenario` (see [CLI](CLI.md#lanternscenario-action-file)).
+
+| Key | Default | Env | Meaning |
+|---|---|---|---|
+| `scenarios.path` | `null` | `LANTERN_SCENARIOS_PATH` | Folder with the scenario JSON files. `null` means `lantern/scenarios` in the project root. |
+| `scenarios.throttle` | `true` | none | `false` replaces Laravel's `throttle:` middleware with a pass-through for scenarios, so long runs do not get a 429 or use up the dev user's quota. A scenario's own `"throttle"` wins. Leave it on unless runs are longer than the app's limit, and when you investigate login, OTP or rate limiting itself; the output counts what was skipped in `scenario.throttle_skipped`. |
+| `scenarios.verify_rollback` | `true` | none | Read back every table a scenario wrote to after the rollback and fail the run if it differs or cannot be read (row count and a content checksum; the largest tables are counted only). `false` skips it. |
+| `scenarios.fake` | `[]` | none | Faked for every scenario: any of `queue`, `bus`, `mail`, `notification`, `http`, `storage`. A scenario's own `fake` list is added to it. Anything else is a usage error. |

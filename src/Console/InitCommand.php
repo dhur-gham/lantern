@@ -4,9 +4,12 @@ declare(strict_types=1);
 
 namespace Lantern\Console;
 
+use Filament\Facades\Filament;
 use Illuminate\Console\Command;
 use Lantern\Agent\Findings;
 use Lantern\Agent\Output;
+use Laravel\Sanctum\HasApiTokens;
+use Laravel\Sanctum\Sanctum;
 use Symfony\Component\Console\Output\OutputInterface;
 use Throwable;
 
@@ -35,7 +38,7 @@ final class InitCommand extends Command
             }
         }
 
-        if (class_exists(\Laravel\Sanctum\Sanctum::class) && $this->usesApiTokens($surfaces['panel']['guard'] ?? 'web')) {
+        if (class_exists(Sanctum::class) && $this->usesApiTokens($surfaces['panel']['guard'] ?? 'web')) {
             $surfaces['api'] = ['type' => 'sanctum', 'guard' => $surfaces['panel']['guard'] ?? 'web', 'user' => $surfaces['panel']['user'] ?? null, 'abilities' => ['*'], 'ttl_minutes' => 30, 'headers' => []];
         }
         if (isset($surfaces['panel'])) {
@@ -75,7 +78,7 @@ final class InitCommand extends Command
     }
 
     /**
-     * @param list<string> $notes
+     * @param  list<string>  $notes
      * @return array<string, mixed>
      */
     private function sessionSurface(string $guard, string $provider, array &$notes): array
@@ -112,11 +115,11 @@ final class InitCommand extends Command
     /** @return array{panel: object, path: string}|null */
     private function filamentPanel(): ?array
     {
-        if (! class_exists(\Filament\Facades\Filament::class)) {
+        if (! class_exists(Filament::class)) {
             return null;
         }
         try {
-            $panel = \Filament\Facades\Filament::getDefaultPanel();
+            $panel = Filament::getDefaultPanel();
 
             return ['panel' => $panel, 'path' => (string) $panel->getPath()];
         } catch (Throwable) {
@@ -129,7 +132,7 @@ final class InitCommand extends Command
         $provider = (string) config('auth.guards.'.$guard.'.provider', '');
         $model = (string) config('auth.providers.'.$provider.'.model', '');
 
-        return $model !== '' && class_exists($model) && in_array(\Laravel\Sanctum\HasApiTokens::class, class_uses_recursive($model), true);
+        return $model !== '' && class_exists($model) && in_array(HasApiTokens::class, class_uses_recursive($model), true);
     }
 
     /** @param array<array-key, mixed> $value */

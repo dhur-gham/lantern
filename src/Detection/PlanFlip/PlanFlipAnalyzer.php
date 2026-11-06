@@ -26,7 +26,7 @@ final class PlanFlipAnalyzer
      * The first finding: a plan change that makes the query costlier than the list growth explains, else cost that
      * grows more than $factor times faster than the list.
      *
-     * @param list<array<string, mixed>> $samples
+     * @param  list<array<string, mixed>>  $samples
      * @return array{kind: string, from: array<string, mixed>, to: array<string, mixed>, size_ratio: float, time_ratio: ?float, rows_ratio: ?float}|null
      */
     public static function find(array $samples, float $factor = 3.0, float $minMs = 10.0, int $minRows = 1000): ?array
@@ -65,7 +65,7 @@ final class PlanFlipAnalyzer
     /**
      * Every point where the chosen plan differs between neighbouring sizes.
      *
-     * @param list<array<string, mixed>> $samples
+     * @param  list<array<string, mixed>>  $samples
      * @return list<array{from: array<string, mixed>, to: array<string, mixed>}>
      */
     public static function changes(array $samples): array
@@ -93,7 +93,7 @@ final class PlanFlipAnalyzer
     }
 
     /**
-     * @param list<array<string, mixed>> $samples
+     * @param  list<array<string, mixed>>  $samples
      * @return list<array<string, mixed>>
      */
     private static function sorted(array $samples): array
@@ -106,7 +106,7 @@ final class PlanFlipAnalyzer
     /**
      * Neighbouring samples plus the smallest against the largest, so slow drift over several steps is seen too.
      *
-     * @param list<array<string, mixed>> $samples
+     * @param  list<array<string, mixed>>  $samples
      * @return list<array{0: array<string, mixed>, 1: array<string, mixed>}>
      */
     private static function pairs(array $samples): array
@@ -123,8 +123,8 @@ final class PlanFlipAnalyzer
     }
 
     /**
-     * @param array<string, mixed> $a
-     * @param array<string, mixed> $b
+     * @param  array<string, mixed>  $a
+     * @param  array<string, mixed>  $b
      * @return array{0: float, 1: ?float, 2: ?float} size, time and rows growth from $a to $b
      */
     private static function ratios(array $a, array $b): array

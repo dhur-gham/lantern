@@ -13,7 +13,7 @@ final class DeepTreeTest extends TestCase
 {
     public function test_deep_tree_is_truncated_and_round_trips(): void
     {
-        $r = new Recorder();
+        $r = new Recorder;
         $trace = $r->begin(['a' => 1], 0);
         for ($i = 0; $i < 600; $i++) {
             $r->start(SpanType::Event, 'd'.$i);

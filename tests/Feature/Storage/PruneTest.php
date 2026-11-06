@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Lantern\Tests\Feature\Storage;
 
+use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -76,7 +77,7 @@ final class PruneTest extends TestCase
 
     public function test_command_options(): void
     {
-        $this->app->make(\Illuminate\Contracts\Console\Kernel::class)->registerCommand($this->app->make(PruneCommand::class));
+        $this->app->make(Kernel::class)->registerCommand($this->app->make(PruneCommand::class));
 
         $this->artisan('lantern:prune', ['--days' => 2, '--issues-days' => 100, '--dry-run' => true])
             ->expectsOutput('Would delete 3 traces and 0 issues.')

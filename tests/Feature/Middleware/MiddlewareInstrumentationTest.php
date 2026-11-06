@@ -6,6 +6,7 @@ namespace Lantern\Tests\Feature\Middleware;
 
 use Closure;
 use Illuminate\Contracts\Http\Kernel;
+use Illuminate\Routing\Middleware\ThrottleRequests;
 use Illuminate\Routing\Router;
 use Lantern\Instrumentation\Middleware\MiddlewareInstrumentation;
 use Lantern\Instrumentation\Middleware\TimedMiddleware;
@@ -130,7 +131,7 @@ final class MiddlewareInstrumentationTest extends TestCase
         $names = array_map(fn (Span $s) => $s->name, $handles);
 
         $this->assertSame(
-            [GlobalProbe::class, GroupProbe::class, \Illuminate\Routing\Middleware\ThrottleRequests::class, ParamProbe::class, TerminableProbe::class],
+            [GlobalProbe::class, GroupProbe::class, ThrottleRequests::class, ParamProbe::class, TerminableProbe::class],
             $names,
         );
 

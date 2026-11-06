@@ -153,8 +153,8 @@ abstract class AgentCommand extends Command
     }
 
     /**
-     * @param array<string, mixed> $payload
-     * @param list<string>|null $columns
+     * @param  array<string, mixed>  $payload
+     * @param  list<string>|null  $columns
      */
     protected function emit(array $payload, ?string $items = null, ?array $columns = null): void
     {

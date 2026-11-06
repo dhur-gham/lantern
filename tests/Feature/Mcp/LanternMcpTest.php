@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Lantern\Tests\Feature\Mcp;
 
 use Illuminate\Support\Carbon;
-use Laravel\Mcp\Facades\Mcp;
 use Lantern\Mcp\LanternServer;
 use Lantern\Mcp\Server;
 use Lantern\Mcp\Tools\LanternCheck;
@@ -15,6 +14,8 @@ use Lantern\Mcp\Tools\LanternIssues;
 use Lantern\Mcp\Tools\LanternMatch;
 use Lantern\Mcp\Tools\LanternTraceSummary;
 use Lantern\Tests\Feature\Agent\AgentTestCase;
+use Laravel\Mcp\Facades\Mcp;
+use Laravel\Mcp\Server\McpServiceProvider;
 
 final class LanternMcpTest extends AgentTestCase
 {
@@ -23,8 +24,8 @@ final class LanternMcpTest extends AgentTestCase
     protected function getPackageProviders($app): array
     {
         $providers = parent::getPackageProviders($app);
-        if (class_exists(\Laravel\Mcp\Server\McpServiceProvider::class)) {
-            $providers[] = \Laravel\Mcp\Server\McpServiceProvider::class;
+        if (class_exists(McpServiceProvider::class)) {
+            $providers[] = McpServiceProvider::class;
         }
 
         return $providers;

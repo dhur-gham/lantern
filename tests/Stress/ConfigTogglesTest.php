@@ -4,14 +4,17 @@ declare(strict_types=1);
 
 namespace Lantern\Tests\Stress;
 
+use Illuminate\Support\Facades\DB;
 use Lantern\Detection\Detector;
 use Lantern\Detection\Detectors\NPlusOneDetector;
+use Lantern\Trace\Recorder;
+use Lantern\Trace\Trace;
 
 final class ThrowingDetector implements Detector
 {
     public function __construct(private readonly array $config = []) {}
 
-    public function detect(\Lantern\Trace\Trace $trace): array
+    public function detect(Trace $trace): array
     {
         throw new \RuntimeException('detector boom');
     }
@@ -256,7 +259,7 @@ final class ConfigTogglesTest extends StressTestCase
         $this->app['router']->get('/many-issues', function () {
             foreach (['s_authors', 's_posts', 's_videos'] as $table) {
                 for ($i = 0; $i < 6; $i++) {
-                    \Illuminate\Support\Facades\DB::select('select * from '.$table.' where id = ?', [$i]);
+                    DB::select('select * from '.$table.' where id = ?', [$i]);
                 }
             }
 
@@ -292,7 +295,7 @@ final class ConfigTogglesTest extends StressTestCase
 
     public function test_kill_switch_config_records_nothing(): void
     {
-        $this->assertFalse($this->app->bound(\Lantern\Trace\Recorder::class));
+        $this->assertFalse($this->app->bound(Recorder::class));
         $this->get('/scenario/loop?n=10')->assertOk()->assertSee('10');
     }
 }

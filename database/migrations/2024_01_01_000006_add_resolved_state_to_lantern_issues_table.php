@@ -6,6 +6,7 @@ use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use Lantern\Storage\MigrationGuard;
 
 return new class extends Migration
 {
@@ -18,7 +19,7 @@ return new class extends Migration
 
     public function up(): void
     {
-        if (\Lantern\Storage\MigrationGuard::skip($this->getConnection())) {
+        if (MigrationGuard::skip($this->getConnection())) {
             return;
         }
 
@@ -55,7 +56,7 @@ return new class extends Migration
 
     public function down(): void
     {
-        if (\Lantern\Storage\MigrationGuard::skip($this->getConnection())) {
+        if (MigrationGuard::skip($this->getConnection())) {
             return;
         }
 

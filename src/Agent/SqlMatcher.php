@@ -27,7 +27,7 @@ final class SqlMatcher
     }
 
     /**
-     * @param array<string, mixed> $filters trace filters (scope, since)
+     * @param  array<string, mixed>  $filters  trace filters (scope, since)
      * @return array<string, mixed> lantern.match payload
      */
     public function match(string $sql, array $filters, int $traces, bool $includeResolved, int $limit): array
@@ -109,7 +109,7 @@ final class SqlMatcher
     /**
      * Ids of the issues recorded on queries with exactly this shape.
      *
-     * @param array<string, mixed> $filters
+     * @param  array<string, mixed>  $filters
      * @return list<string>
      */
     public function issueKeys(string $sql, array $filters, int $traces): array
@@ -126,7 +126,7 @@ final class SqlMatcher
     }
 
     /**
-     * @param array<string, mixed> $filters
+     * @param  array<string, mixed>  $filters
      * @return array{shape: string, fingerprint: string, scanned: int, groups: array<string, array<string, mixed>>, issues: array<string, array{meta: array<string, mixed>, groups: array<string, true>}>}
      */
     private function scan(string $sql, array $filters, int $traces): array
@@ -241,7 +241,7 @@ final class SqlMatcher
     }
 
     /**
-     * @param array<string, mixed>|null $node
+     * @param  array<string, mixed>|null  $node
      * @return \Generator<int, array<string, mixed>>
      */
     private function queryNodes(?array $node): \Generator
@@ -278,8 +278,8 @@ final class SqlMatcher
     }
 
     /**
-     * @param array<string, mixed> $group
-     * @param list<array{state: array<string, mixed>, meta: array<string, mixed>}> $issues best first
+     * @param  array<string, mixed>  $group
+     * @param  list<array{state: array<string, mixed>, meta: array<string, mixed>}>  $issues  best first
      * @return array<string, mixed>
      */
     private function entry(array $group, array $issues): array

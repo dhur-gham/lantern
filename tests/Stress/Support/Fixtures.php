@@ -104,9 +104,7 @@ class SPostResource extends JsonResource
     }
 }
 
-class SEvent
-{
-}
+class SEvent {}
 
 class ThrowingListener
 {
@@ -370,12 +368,13 @@ class ScenarioController extends Controller
 
     private function throwInResource(): mixed
     {
-        return (new class(['a' => 1]) extends JsonResource {
+        return new class(['a' => 1]) extends JsonResource
+        {
             public function toArray(Request $request): array
             {
                 throw new RuntimeException('resource boom');
             }
-        });
+        };
     }
 
     private function catching(\Closure $fn): string
@@ -582,7 +581,9 @@ class ScenarioController extends Controller
 
     private function loopIds(int $n): string
     {
-        for ($i = 0; $i < $n; $i++) { DB::select('select * from s_authors where id = ?', [$i + 1]); }
+        for ($i = 0; $i < $n; $i++) {
+            DB::select('select * from s_authors where id = ?', [$i + 1]);
+        }
 
         return (string) $n;
     }

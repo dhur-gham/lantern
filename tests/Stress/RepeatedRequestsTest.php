@@ -7,6 +7,7 @@ namespace Lantern\Tests\Stress;
 use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Foundation\Http\Events\RequestHandled;
 use Illuminate\Routing\Events\RouteMatched;
+use Lantern\Trace\Recorder;
 use ReflectionProperty;
 
 final class RepeatedRequestsTest extends StressTestCase
@@ -144,7 +145,7 @@ final class RepeatedRequestsTest extends StressTestCase
         $this->get('/scenario/ok');
         $this->get('/scenario/ok');
 
-        $this->assertFalse($this->app->make(\Lantern\Trace\Recorder::class)->isActive());
+        $this->assertFalse($this->app->make(Recorder::class)->isActive());
         $all = $this->sink()->all();
         $this->assertNotSame($all[0], $all[1]);
     }

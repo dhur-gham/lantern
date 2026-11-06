@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Lantern\Tests\Feature\Matrix;
 
+use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
@@ -150,7 +151,7 @@ final class SchemaMatrixTest extends MatrixTestCase
     }
 
     /**
-     * @param array<string, list<array<string, mixed>>> $tables
+     * @param  array<string, list<array<string, mixed>>>  $tables
      * @return array<string, list<array<string, mixed>>>
      */
     private function withTickets(array $tables): array
@@ -164,7 +165,7 @@ final class SchemaMatrixTest extends MatrixTestCase
      */
     private function installStatements(array $options): array
     {
-        $this->app->make(\Illuminate\Contracts\Console\Kernel::class)->registerCommand($this->app->make(InstallCommand::class));
+        $this->app->make(Kernel::class)->registerCommand($this->app->make(InstallCommand::class));
         $code = Artisan::call('lantern:install', ['--sql' => true, '--connection' => self::driver()] + $options);
         $output = Artisan::output();
         $this->assertSame(0, $code, $output);

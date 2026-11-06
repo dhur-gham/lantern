@@ -136,11 +136,11 @@ final class FakeStore implements TraceStore
     public function test_unset_keep_rate_defaults_by_environment(): void
     {
         $this->app['env'] = 'local';
-        $this->assertSame(1.0, \Lantern\Sampling\Sampler::defaultKeepRate());
+        $this->assertSame(1.0, Sampler::defaultKeepRate());
         $this->assertTrue($this->sampler(['keep_rate' => null], 0.99)->keepTrace($this->trace(), []));
 
         $this->app['env'] = 'production';
-        $this->assertSame(0.1, \Lantern\Sampling\Sampler::defaultKeepRate());
+        $this->assertSame(0.1, Sampler::defaultKeepRate());
         $this->assertFalse($this->sampler(['keep_rate' => null, 'keep_slow_ms' => 99999], 0.99)->keepTrace($this->trace(), []));
     }
 }

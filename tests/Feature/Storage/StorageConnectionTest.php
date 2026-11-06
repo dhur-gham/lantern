@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Lantern\Tests\Feature\Storage;
 
+use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -38,7 +39,7 @@ final class StorageConnectionTest extends TestCase
     private function migrate(): void
     {
         $this->loadMigrationsFrom(dirname(__DIR__, 3).'/database/migrations');
-        $kernel = $this->app->make(\Illuminate\Contracts\Console\Kernel::class);
+        $kernel = $this->app->make(Kernel::class);
         foreach (Commands::all() as $class) {
             $kernel->registerCommand($this->app->make($class));
         }

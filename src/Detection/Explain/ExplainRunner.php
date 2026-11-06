@@ -26,9 +26,7 @@ final class ExplainRunner implements AnalyzeSource, PlanSource
 {
     private ?string $failure = null;
 
-    public function __construct(private readonly ?DatabaseManager $db = null)
-    {
-    }
+    public function __construct(private readonly ?DatabaseManager $db = null) {}
 
     /**
      * `tables` lists every real table in the plan (derived tables left out) with its estimated rows, chosen key

@@ -2,34 +2,47 @@
 
 namespace Lantern;
 
+use Illuminate\Contracts\Config\Repository;
+use Illuminate\Support\Facades\Route;
 use Illuminate\Support\ServiceProvider;
+use Lantern\Access\Access;
+use Lantern\Access\AccessController;
+use Lantern\Access\AccessTokens;
+use Lantern\Agent\Commands;
+use Lantern\Console\InitCommand;
 use Lantern\Console\InstallCommand;
 use Lantern\Console\PruneCommand;
-use Lantern\Detection\Analyzer;
-use Lantern\Http\Middleware\Authorize;
-use Lantern\Storage\TraceQueries;
 use Lantern\Console\StatusCommand;
 use Lantern\Console\TraceDumpCommand;
+use Lantern\Detection\Analyzer;
+use Lantern\Detection\Detectors\PlanFlipDetector;
+use Lantern\Http\Middleware\Authorize;
+use Lantern\Instrumentation\Command\CommandInstrumentation;
 use Lantern\Instrumentation\Eloquent\LazyLoadInstrumentation;
+use Lantern\Instrumentation\Filament\FilamentInstrumentation;
+use Lantern\Instrumentation\Job\JobInstrumentation;
 use Lantern\Instrumentation\Lifecycle\LifecycleInstrumentation;
 use Lantern\Instrumentation\Lifecycle\MemorySink;
 use Lantern\Instrumentation\Lifecycle\PersistSink;
-use Lantern\Sampling\Sampler;
-use Lantern\Storage\DatabaseTraceStore;
-use Lantern\Storage\TraceStore;
 use Lantern\Instrumentation\Lifecycle\TraceSink;
 use Lantern\Instrumentation\Livewire\LivewireInstrumentation;
 use Lantern\Instrumentation\Middleware\MiddlewareInstrumentation;
 use Lantern\Instrumentation\Query\QueryInstrumentation;
+use Lantern\Mcp\Server;
 use Lantern\Query\CallSiteResolver;
+use Lantern\Sampling\Sampler;
+use Lantern\Storage\DatabaseTraceStore;
+use Lantern\Storage\TraceQueries;
+use Lantern\Storage\TraceStore;
 use Lantern\Trace\Recorder;
+use Livewire\Livewire;
 
 class LanternServiceProvider extends ServiceProvider
 {
-    public const VERSION = '0.7.1';
+    public const VERSION = '1.0.0';
 
     /** Detectors added after 0.3: merged into a published `detectors` list that predates them. */
-    public const ADDED_DETECTORS = [\Lantern\Detection\Detectors\PlanFlipDetector::class];
+    public const ADDED_DETECTORS = [PlanFlipDetector::class];
 
     public function register(): void
     {
@@ -42,8 +55,8 @@ class LanternServiceProvider extends ServiceProvider
 
         $this->app->singleton(Recording::class, fn ($app) => new Recording($app));
         $this->mergeAccessFile();
-        $this->app->singleton(\Lantern\Access\AccessTokens::class, fn ($app) => new \Lantern\Access\AccessTokens($app['cache']->store($app['config']->get('lantern.access.cache_store'))));
-        $this->app->singleton(\Lantern\Access\Access::class, fn ($app) => new \Lantern\Access\Access($app, $app->make(\Lantern\Access\AccessTokens::class)));
+        $this->app->singleton(AccessTokens::class, fn ($app) => new AccessTokens($app['cache']->store($app['config']->get('lantern.access.cache_store'))));
+        $this->app->singleton(Access::class, fn ($app) => new Access($app, $app->make(AccessTokens::class)));
 
         if (! $this->tracingEnabled()) {
             return;
@@ -101,11 +114,11 @@ class LanternServiceProvider extends ServiceProvider
         $this->app->singleton(Analyzer::class, fn ($app) => new Analyzer((array) $app['config']->get('lantern', [])));
 
         // Jobs/commands listen before Lifecycle so a job trace is finished before its JobProcessed reset runs.
-        if (class_exists(\Lantern\Instrumentation\Job\JobInstrumentation::class)) {
-            \Lantern\Instrumentation\Job\JobInstrumentation::register($this->app);
+        if (class_exists(JobInstrumentation::class)) {
+            JobInstrumentation::register($this->app);
         }
-        if (class_exists(\Lantern\Instrumentation\Command\CommandInstrumentation::class)) {
-            \Lantern\Instrumentation\Command\CommandInstrumentation::register($this->app);
+        if (class_exists(CommandInstrumentation::class)) {
+            CommandInstrumentation::register($this->app);
         }
 
         // Lifecycle first: it begins the trace as early as a provider can.
@@ -123,12 +136,12 @@ class LanternServiceProvider extends ServiceProvider
             $queries->register();
         }
 
-        if (class_exists(\Livewire\Livewire::class) && class_exists(LivewireInstrumentation::class)) {
+        if (class_exists(Livewire::class) && class_exists(LivewireInstrumentation::class)) {
             LivewireInstrumentation::register($this->app);
         }
 
-        if (class_exists(\Lantern\Instrumentation\Filament\FilamentInstrumentation::class)) {
-            \Lantern\Instrumentation\Filament\FilamentInstrumentation::register($this->app);
+        if (class_exists(FilamentInstrumentation::class)) {
+            FilamentInstrumentation::register($this->app);
         }
 
         if (class_exists(LazyLoadInstrumentation::class)) {
@@ -144,8 +157,8 @@ class LanternServiceProvider extends ServiceProvider
         $this->registerRoutes();
 
         // Local MCP server for AI agents; a no-op unless laravel/mcp is installed.
-        if (class_exists(\Lantern\Mcp\Server::class)) {
-            \Lantern\Mcp\Server::register();
+        if (class_exists(Server::class)) {
+            Server::register();
         }
 
         if ($this->app->runningInConsole()) {
@@ -158,8 +171,8 @@ class LanternServiceProvider extends ServiceProvider
             ], 'lantern-migrations');
 
             $this->commands(array_values(array_filter([
-                InstallCommand::class, \Lantern\Console\InitCommand::class, StatusCommand::class, TraceDumpCommand::class, PruneCommand::class,
-                ...\Lantern\Agent\Commands::all(),
+                InstallCommand::class, InitCommand::class, StatusCommand::class, TraceDumpCommand::class, PruneCommand::class,
+                ...Commands::all(),
             ], 'class_exists')));
         }
     }
@@ -210,7 +223,7 @@ class LanternServiceProvider extends ServiceProvider
     }
 
     /** Name stored on each trace and issue: `lantern.app`, else `app.name`. */
-    public static function appName(\Illuminate\Contracts\Config\Repository $config): ?string
+    public static function appName(Repository $config): ?string
     {
         $name = $config->get('lantern.app') ?: $config->get('app.name');
 
@@ -281,14 +294,14 @@ class LanternServiceProvider extends ServiceProvider
             return;
         }
 
-        if (\Lantern\Access\Access::available($this->app)) {
-            \Illuminate\Support\Facades\Route::middleware(['web', 'throttle:30,1'])
-                ->get(\Lantern\Access\Access::PATH.'/{token}', \Lantern\Access\AccessController::class)
+        if (Access::available($this->app)) {
+            Route::middleware(['web', 'throttle:30,1'])
+                ->get(Access::PATH.'/{token}', AccessController::class)
                 ->name('lantern.access');
         }
 
         $config = $this->app['config'];
-        \Illuminate\Support\Facades\Route::group([
+        Route::group([
             'domain' => $config->get('lantern.domain'),
             'prefix' => trim((string) $config->get('lantern.path', 'lantern'), '/'),
             'middleware' => array_merge((array) $config->get('lantern.middleware', ['web']), [Authorize::class]),

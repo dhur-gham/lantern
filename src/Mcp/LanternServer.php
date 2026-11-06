@@ -4,16 +4,16 @@ declare(strict_types=1);
 
 namespace Lantern\Mcp;
 
-use Laravel\Mcp\Server;
-use Laravel\Mcp\Server\Attributes\Instructions;
-use Laravel\Mcp\Server\Attributes\Name;
-use Laravel\Mcp\Server\Attributes\Version;
 use Lantern\Mcp\Tools\LanternCheck;
 use Lantern\Mcp\Tools\LanternDiff;
 use Lantern\Mcp\Tools\LanternIssue;
 use Lantern\Mcp\Tools\LanternIssues;
 use Lantern\Mcp\Tools\LanternMatch;
 use Lantern\Mcp\Tools\LanternTraceSummary;
+use Laravel\Mcp\Server;
+use Laravel\Mcp\Server\Attributes\Instructions;
+use Laravel\Mcp\Server\Attributes\Name;
+use Laravel\Mcp\Server\Attributes\Version;
 
 #[Name('lantern')]
 #[Version('1.0.0')]

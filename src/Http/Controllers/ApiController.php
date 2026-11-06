@@ -10,9 +10,7 @@ use Lantern\Storage\TraceQueries;
 
 final class ApiController
 {
-    public function __construct(private readonly TraceQueries $queries)
-    {
-    }
+    public function __construct(private readonly TraceQueries $queries) {}
 
     public function traces(Request $request): JsonResponse
     {

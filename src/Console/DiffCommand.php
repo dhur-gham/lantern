@@ -88,7 +88,7 @@ final class DiffCommand extends AgentCommand
     /**
      * One entry per shape; findings sharing a shape (the same query from two lines of one function) are merged.
      *
-     * @param list<array<string, mixed>> $findings
+     * @param  list<array<string, mixed>>  $findings
      * @return array<string, array<string, mixed>>
      */
     private function byShape(array $findings): array
@@ -112,8 +112,8 @@ final class DiffCommand extends AgentCommand
     }
 
     /**
-     * @param array<string, mixed> $before
-     * @param array<string, mixed> $after
+     * @param  array<string, mixed>  $before
+     * @param  array<string, mixed>  $after
      * @return array<string, mixed>
      */
     private function compare(array $before, array $after): array
@@ -165,7 +165,7 @@ final class DiffCommand extends AgentCommand
     }
 
     /**
-     * @param array<string, mixed> $trace
+     * @param  array<string, mixed>  $trace
      * @return array<string, true> missing_index keys for every query shape in the trace
      */
     private function missingIndexIds(array $trace): array
@@ -195,7 +195,7 @@ final class DiffCommand extends AgentCommand
     }
 
     /**
-     * @param array<string, mixed> $trace
+     * @param  array<string, mixed>  $trace
      * @return array<string, mixed>
      */
     private function side(array $trace): array

@@ -6,11 +6,11 @@ namespace Lantern\Tests\Feature\Console;
 
 use Illuminate\Support\Facades\Artisan;
 use Lantern\Detection\Analyzer;
+use Lantern\Detection\Detectors\DuplicateQueryDetector;
 use Lantern\Detection\Detectors\LazyLoadDetector;
 use Lantern\Detection\Detectors\MemoryHogDetector;
 use Lantern\Detection\Detectors\MissingIndexDetector;
 use Lantern\Detection\Detectors\NPlusOneDetector;
-use Lantern\Detection\Detectors\DuplicateQueryDetector;
 use Lantern\Detection\Detectors\PlanFlipDetector;
 use Lantern\Detection\Detectors\SlowQueryDetector;
 use Lantern\LanternServiceProvider;

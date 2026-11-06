@@ -18,9 +18,7 @@ final class DatabaseCatalog implements Catalog
     /** @var array<string, array{indexes: list<array{name: string, columns: list<string>, unique: bool}>, stats: array{rows: ?int, columns: array<string, array{type: ?string, distinct: ?int}>}}> */
     private array $cache = [];
 
-    public function __construct(private readonly ?DatabaseManager $db = null)
-    {
-    }
+    public function __construct(private readonly ?DatabaseManager $db = null) {}
 
     public function indexes(?string $connection, string $table): array
     {

@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Lantern\Tests\Feature\Octane;
 
-use Illuminate\Queue\Events\JobProcessed;
+use Illuminate\Routing\Events\RouteMatched;
 use Lantern\Instrumentation\Lifecycle\LifecycleInstrumentation;
 use Lantern\Instrumentation\Lifecycle\MemorySink;
 use Lantern\Instrumentation\Lifecycle\TraceSink;
@@ -107,7 +107,7 @@ final class PerExecutionSamplingTest extends LifecycleTestCase
     public function test_provider_boot_cost_is_not_repeated_per_execution(): void
     {
         $this->useRate(0.0);
-        $listeners = fn () => count($this->app['events']->getListeners(\Illuminate\Routing\Events\RouteMatched::class));
+        $listeners = fn () => count($this->app['events']->getListeners(RouteMatched::class));
         $terminating = new \ReflectionProperty($this->app, 'terminatingCallbacks');
         $lifecycle = $this->app->make(LifecycleInstrumentation::class);
 

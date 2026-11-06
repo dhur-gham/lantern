@@ -9,6 +9,7 @@ use Lantern\Detection\Explain\Catalog;
 use Lantern\Detection\Explain\DatabaseCatalog;
 use Lantern\Detection\Issue;
 use Lantern\Detection\QueryFilter;
+use Lantern\Trace\SpanType;
 use Lantern\Trace\Trace;
 
 final class NPlusOneDetector implements Detector
@@ -26,7 +27,7 @@ final class NPlusOneDetector implements Detector
         $groups = [];
 
         foreach ($spans as $span) {
-            if ($span->type !== \Lantern\Trace\SpanType::Query
+            if ($span->type !== SpanType::Query
                 || ($span->meta['kind'] ?? null) === 'transaction'
                 || ($span->meta['failed'] ?? false)
                 || ! isset($span->meta['fingerprint'])

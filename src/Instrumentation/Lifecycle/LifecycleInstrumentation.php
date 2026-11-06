@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Lantern\Instrumentation\Lifecycle;
 
 use Closure;
+use Illuminate\Container\Container;
 use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Contracts\Validation\ValidatesWhenResolved;
 use Illuminate\Foundation\Events\Terminating;
@@ -15,13 +16,15 @@ use Illuminate\Queue\Events\JobProcessed;
 use Illuminate\Routing\Contracts\CallableDispatcher;
 use Illuminate\Routing\Contracts\ControllerDispatcher;
 use Illuminate\Routing\Events\RouteMatched;
-use Illuminate\Support\Facades\Event;
 use Illuminate\Validation\Factory as ValidationFactory;
-use Illuminate\Container\Container;
+use Lantern\Detection\Analyzer;
+use Lantern\Detection\Issue;
+use Lantern\Instrumentation\Filament\FilamentInstrumentation;
 use Lantern\Sampling\Sampler;
 use Lantern\Trace\Recorder;
 use Lantern\Trace\Span;
 use Lantern\Trace\SpanType;
+use Lantern\Trace\Trace;
 use ReflectionMethod;
 use ReflectionProperty;
 use Throwable;
@@ -51,7 +54,7 @@ final class LifecycleInstrumentation
     /** @var list<Span> request spans opened inside a record trace */
     private array $nested = [];
 
-    private function inRecord(?\Lantern\Trace\Trace $trace): bool
+    private function inRecord(?Trace $trace): bool
     {
         return $trace !== null && ($trace->meta['kind'] ?? null) === 'record';
     }
@@ -252,12 +255,12 @@ final class LifecycleInstrumentation
             return;
         }
 
-        if (class_exists(\Lantern\Instrumentation\Filament\FilamentInstrumentation::class)) {
-            \Lantern\Instrumentation\Filament\FilamentInstrumentation::annotateTrace($this->app, $trace);
+        if (class_exists(FilamentInstrumentation::class)) {
+            FilamentInstrumentation::annotateTrace($this->app, $trace);
         }
 
         try {
-            $issues = array_map(fn (\Lantern\Detection\Issue $i) => $i->toArray(), $this->app->make(\Lantern\Detection\Analyzer::class)->analyze($trace));
+            $issues = array_map(fn (Issue $i) => $i->toArray(), $this->app->make(Analyzer::class)->analyze($trace));
             $trace->meta['issues'] = $this->withFilamentMeta($trace, $issues);
             $trace->meta['issue_count'] = count($issues);
         } catch (Throwable) {
@@ -274,10 +277,10 @@ final class LifecycleInstrumentation
     }
 
     /**
-     * @param list<array<string, mixed>> $issues
+     * @param  list<array<string, mixed>>  $issues
      * @return list<array<string, mixed>>
      */
-    private function withFilamentMeta(\Lantern\Trace\Trace $trace, array $issues): array
+    private function withFilamentMeta(Trace $trace, array $issues): array
     {
         $spans = $trace->spans();
         $summary = [];
@@ -300,7 +303,7 @@ final class LifecycleInstrumentation
         return $issues;
     }
 
-    private function writeLastTrace(\Lantern\Trace\Trace $trace): void
+    private function writeLastTrace(Trace $trace): void
     {
         $dir = storage_path('lantern');
         if (! is_dir($dir)) {
